@@ -1,0 +1,30 @@
+name: tienda_labiales
+description: Aplicación de tienda de labiales con carrito de compras
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.1
+  cached_network_image: ^3.2.3
+
+dev_dependencies:
+  flutter_lints: ^2.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - lib/assets/
+    - lib/assets/saint.jpeg
+    - lib/assets/spice.jpeg
+    - lib/assets/brownie.jpeg
+    - lib/assets/sweet chocolate.jpeg
+    - lib/assets/maroon.jpeg
+    - lib/assets/hazelnut.jpeg
