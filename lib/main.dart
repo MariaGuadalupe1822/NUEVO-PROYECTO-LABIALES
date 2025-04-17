@@ -24,6 +24,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.pink,
         fontFamily: 'Georgia',
         textTheme: const TextTheme(
+          headlineMedium: TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold),
           bodyLarge: TextStyle(color: Colors.pinkAccent),
           bodyMedium: TextStyle(color: Colors.pinkAccent),
         ),
@@ -252,7 +253,7 @@ class CartProvider with ChangeNotifier {
     );
 
     if (existingItemIndex >= 0) {
-      _cartItems[existingItemIndex].quantity++;
+      _cartItems[existingItemIndex].quantity += 2; // Incrementa en 2
     } else {
       _cartItems.add(CartItem(
         id: DateTime.now().toString(),
@@ -337,71 +338,121 @@ class AuthScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Iniciar Sesión'),
-        centerTitle: true,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextFormField(
-                controller: _usernameController,
-                decoration: const InputDecoration(
-                  labelText: 'Usuario',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Por favor ingrese su usuario';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Contraseña',
-                  border: OutlineInputBorder(),
-                ),
-                obscureText: true,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Por favor ingrese su contraseña';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 30),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                ),
-                onPressed: () {
-                  if (_formKey.currentState!.validate()) {
-                    bool isAuthenticated = authProvider.login(
-                      _usernameController.text,
-                      _passwordController.text,
-                    );
-                    if (isAuthenticated) {
-                      Navigator.pushReplacementNamed(context, '/home');
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Usuario o contraseña incorrectos'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  }
-                },
-                child: const Text('Iniciar Sesión'),
-              ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.pink.shade50,
+              Colors.pink.shade100,
             ],
+          ),
+        ),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.face_retouching_natural,
+                          size: 80,
+                          color: Colors.pinkAccent,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Belleza en tus labios',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                        const SizedBox(height: 30),
+                        TextFormField(
+                          controller: _usernameController,
+                          decoration: InputDecoration(
+                            labelText: 'Usuario',
+                            prefixIcon: Icon(Icons.person, color: Colors.pink),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Ingresa tu usuario';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 20),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: 'Contraseña',
+                            prefixIcon: Icon(Icons.lock, color: Colors.pink),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Ingresa tu contraseña';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 30),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.pinkAccent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 5,
+                            ),
+                            onPressed: () {
+                              if (_formKey.currentState!.validate()) {
+                                bool isAuthenticated = authProvider.login(
+                                  _usernameController.text,
+                                  _passwordController.text,
+                                );
+                                if (isAuthenticated) {
+                                  Navigator.pushReplacementNamed(context, '/home');
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Credenciales incorrectas'),
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: const Text(
+                              'INICIAR SESIÓN',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -499,7 +550,15 @@ class ProductCard extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset(product.imagePath, height: 80, width: 80),
+            Hero(
+              tag: 'product-${product.id}',
+              child: Image.asset(
+                product.imagePath,
+                height: 80,
+                width: 80,
+                fit: BoxFit.cover,
+              ),
+            ),
             const SizedBox(height: 10),
             Text(
               product.name,
@@ -529,28 +588,45 @@ class ProductCard extends StatelessWidget {
   }
 
   Widget _buildPriceButton(
-    String label, int price, bool isMatte, BuildContext context) {
+      String label, int price, bool isMatte, BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    final productProvider = Provider.of<ProductProvider>(context, listen: false);
     final product = this.product;
 
-    final isInCart = cartProvider.cartItems.any((item) => 
-        item.productId == product.id && item.isMatte == isMatte);
+    final existingItem = cartProvider.cartItems.firstWhere(
+      (item) => item.productId == product.id && item.isMatte == isMatte,
+      orElse: () => CartItem(
+        id: '',
+        productId: '',
+        name: '',
+        isMatte: false,
+        price: 0,
+        imagePath: '',
+        quantity: 0,
+      ),
+    );
+
+    final isInCart = existingItem.quantity > 0;
 
     return ElevatedButton(
       onPressed: () {
         if (product.stock > 0) {
           if (isInCart) {
-            final existingItem = cartProvider.cartItems.firstWhere(
-              (item) => item.productId == product.id && item.isMatte == isMatte);
-            cartProvider.updateQuantity(existingItem.id, existingItem.quantity + 1);
+            cartProvider.updateQuantity(
+              existingItem.id, 
+              existingItem.quantity + 2, // Incrementa en 2
+            );
           } else {
             cartProvider.addToCart(product, isMatte);
           }
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text("${product.name} ($label) agregado al carrito"),
+              content: Text(
+                isInCart 
+                  ? "+2 ${product.name} ($label) en carrito"
+                  : "${product.name} ($label) agregado al carrito",
+              ),
+              duration: Duration(milliseconds: 800),
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -562,6 +638,7 @@ class ProductCard extends StatelessWidget {
             const SnackBar(
               content: Text("Producto agotado"),
               backgroundColor: Colors.red,
+              duration: Duration(milliseconds: 800),
             ),
           );
         }
@@ -582,7 +659,7 @@ class ProductCard extends StatelessWidget {
             const Icon(Icons.check, size: 18, color: Colors.white),
           const SizedBox(width: 4),
           Text(
-            isInCart ? "Agregado" : "$label: \$$price",
+            isInCart ? "Agregado (${existingItem.quantity})" : "$label: \$$price",
             style: const TextStyle(
               fontSize: 12, 
               color: Colors.white,
