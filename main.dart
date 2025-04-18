@@ -29,10 +29,11 @@ class MyApp extends StatelessWidget {
           bodyMedium: TextStyle(color: Colors.pinkAccent),
         ),
       ),
-      home: AuthScreen(),
+      home: MainScreen(),
       routes: {
         '/home': (context) => MainScreen(),
         '/cart': (context) => CartScreen(),
+        '/auth': (context) => AuthScreen(),
       },
     );
   }
@@ -153,7 +154,7 @@ class ProductProvider with ChangeNotifier {
       mattePrice: 220,
       glossPrice: 240,
       stock: 12,
-      imagePath: "lib/assets/sweet_chocolate.jpeg",
+      imagePath: "lib/assets/sweet chocolate.jpeg",
       color: Colors.brown[800]!,
     ),
     Product(
@@ -328,14 +329,13 @@ class AuthScreen extends StatelessWidget {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final String? redirectRoute;
+
+  AuthScreen({this.redirectRoute});
 
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
-
-    if (authProvider.isAuthenticated) {
-      return MainScreen();
-    }
 
     return Scaffold(
       body: Container(
@@ -429,7 +429,11 @@ class AuthScreen extends StatelessWidget {
                                   _passwordController.text,
                                 );
                                 if (isAuthenticated) {
-                                  Navigator.pushReplacementNamed(context, '/home');
+                                  if (redirectRoute != null) {
+                                    Navigator.pushReplacementNamed(context, redirectRoute!);
+                                  } else {
+                                    Navigator.pushReplacementNamed(context, '/home');
+                                  }
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -486,7 +490,11 @@ class MainScreen extends StatelessWidget {
                 child: IconButton(
                   icon: const Icon(Icons.shopping_cart),
                   onPressed: () {
-                    Navigator.pushNamed(context, '/cart');
+                    if (authProvider.isAuthenticated) {
+                      Navigator.pushNamed(context, '/cart');
+                    } else {
+                      Navigator.pushNamed(context, '/auth', arguments: '/cart');
+                    }
                   },
                 ),
               ),
@@ -499,10 +507,54 @@ class MainScreen extends StatelessWidget {
             ],
           ),
         ),
-        body: const TabBarView(
+        body: TabBarView(
           children: [
-            ProductGridScreen(),
-            InventoryScreen(),
+            Consumer<AuthProvider>(
+              builder: (context, auth, child) {
+                if (auth.isAuthenticated) {
+                  return const ProductGridScreen();
+                } else {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('Debes iniciar sesión para ver las compras'),
+                        const SizedBox(height: 20),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/auth', arguments: '/home');
+                          },
+                          child: const Text('Iniciar Sesión'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              },
+            ),
+            Consumer<AuthProvider>(
+              builder: (context, auth, child) {
+                if (auth.isAuthenticated) {
+                  return const InventoryScreen();
+                } else {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('Debes iniciar sesión para ver el inventario'),
+                        const SizedBox(height: 20),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/auth', arguments: '/home');
+                          },
+                          child: const Text('Iniciar Sesión'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              },
+            ),
           ],
         ),
       ),
@@ -790,81 +842,171 @@ class InventoryScreen extends StatelessWidget {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     final formKey = GlobalKey<FormState>();
     Product editedProduct = product.copyWith();
+    String originalImagePath = product.imagePath;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text("Editar producto"),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        initialValue: product.name,
+                        decoration: const InputDecoration(labelText: "Nombre"),
+                        onSaved: (value) => editedProduct = editedProduct.copyWith(name: value),
+                      ),
+                      TextFormField(
+                        initialValue: product.shade,
+                        decoration: const InputDecoration(labelText: "Tono"),
+                        onSaved: (value) => editedProduct = editedProduct.copyWith(shade: value),
+                      ),
+                      TextFormField(
+                        initialValue: product.mattePrice.toString(),
+                        decoration: const InputDecoration(labelText: "Precio Mate"),
+                        keyboardType: TextInputType.number,
+                        onSaved: (value) => editedProduct =
+                            editedProduct.copyWith(mattePrice: int.parse(value!)),
+                      ),
+                      TextFormField(
+                        initialValue: product.glossPrice.toString(),
+                        decoration: const InputDecoration(labelText: "Precio Gloss"),
+                        keyboardType: TextInputType.number,
+                        onSaved: (value) => editedProduct =
+                            editedProduct.copyWith(glossPrice: int.parse(value!)),
+                      ),
+                      TextFormField(
+                        initialValue: product.stock.toString(),
+                        decoration: const InputDecoration(labelText: "Stock"),
+                        keyboardType: TextInputType.number,
+                        onSaved: (value) =>
+                            editedProduct = editedProduct.copyWith(stock: int.parse(value!)),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        "Imagen actual:",
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 5),
+                      Image.asset(
+                        editedProduct.imagePath,
+                        height: 50,
+                        width: 50,
+                        fit: BoxFit.cover,
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton(
+                        onPressed: () {
+                          _showImageSelectionDialog(context, (newImagePath) {
+                            setState(() {
+                              editedProduct = editedProduct.copyWith(imagePath: newImagePath);
+                            });
+                          }, originalImagePath);
+                        },
+                        child: const Text("Cambiar Imagen"),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  child: const Text("Cancelar"),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                ElevatedButton(
+                  child: const Text("Guardar"),
+                  onPressed: () {
+                    if (formKey.currentState!.validate()) {
+                      formKey.currentState!.save();
+                      productProvider.updateProduct(product.id, editedProduct);
+                      cartProvider.updatePricesFromInventory(productProvider);
+                      Navigator.of(context).pop();
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: () {
+                    productProvider.removeProduct(product.id);
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showImageSelectionDialog(BuildContext context, Function(String) onImageSelected, String originalImagePath) {
+    final List<String> availableImages = [
+      "lib/assets/saint.jpeg",
+      "lib/assets/spice.jpeg",
+      "lib/assets/brownie.jpeg",
+      "lib/assets/sweet_chocolate.jpeg",
+      "lib/assets/maroon.jpeg",
+      "lib/assets/hazelnut.jpeg",
+    ];
 
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text("Editar producto"),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    initialValue: product.name,
-                    decoration: const InputDecoration(labelText: "Nombre"),
-                    onSaved: (value) => editedProduct = editedProduct.copyWith(name: value),
-                  ),
-                  TextFormField(
-                    initialValue: product.shade,
-                    decoration: const InputDecoration(labelText: "Tono"),
-                    onSaved: (value) => editedProduct = editedProduct.copyWith(shade: value),
-                  ),
-                  TextFormField(
-                    initialValue: product.mattePrice.toString(),
-                    decoration: const InputDecoration(labelText: "Precio Mate"),
-                    keyboardType: TextInputType.number,
-                    onSaved: (value) => editedProduct =
-                        editedProduct.copyWith(mattePrice: int.parse(value!)),
-                  ),
-                  TextFormField(
-                    initialValue: product.glossPrice.toString(),
-                    decoration: const InputDecoration(labelText: "Precio Gloss"),
-                    keyboardType: TextInputType.number,
-                    onSaved: (value) => editedProduct =
-                        editedProduct.copyWith(glossPrice: int.parse(value!)),
-                  ),
-                  TextFormField(
-                    initialValue: product.stock.toString(),
-                    decoration: const InputDecoration(labelText: "Stock"),
-                    keyboardType: TextInputType.number,
-                    onSaved: (value) =>
-                        editedProduct = editedProduct.copyWith(stock: int.parse(value!)),
-                  ),
-                  TextFormField(
-                    initialValue: product.imagePath,
-                    decoration: const InputDecoration(labelText: "Ruta de imagen"),
-                    onSaved: (value) =>
-                        editedProduct = editedProduct.copyWith(imagePath: value),
-                  ),
-                ],
+          title: const Text("Seleccionar Imagen"),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: GridView.builder(
+              shrinkWrap: true,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1,
               ),
+              itemCount: availableImages.length + 1, // +1 para la opción original
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return GestureDetector(
+                    onTap: () {
+                      onImageSelected(originalImagePath);
+                      Navigator.of(context).pop();
+                    },
+                    child: Column(
+                      children: [
+                        const Icon(Icons.restore, size: 40),
+                        const SizedBox(height: 5),
+                        const Text("Original"),
+                      ],
+                    ),
+                  );
+                }
+                
+                final imagePath = availableImages[index - 1];
+                return GestureDetector(
+                  onTap: () {
+                    onImageSelected(imagePath);
+                    Navigator.of(context).pop();
+                  },
+                  child: Image.asset(
+                    imagePath,
+                    fit: BoxFit.cover,
+                  ),
+                );
+              },
             ),
           ),
           actions: [
             TextButton(
-              child: const Text("Cancelar"),
               onPressed: () => Navigator.of(context).pop(),
-            ),
-            ElevatedButton(
-              child: const Text("Guardar"),
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  formKey.currentState!.save();
-                  productProvider.updateProduct(product.id, editedProduct);
-                  cartProvider.updatePricesFromInventory(productProvider);
-                  Navigator.of(context).pop();
-                }
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () {
-                productProvider.removeProduct(product.id);
-                Navigator.of(context).pop();
-              },
+              child: const Text("Cancelar"),
             ),
           ],
         );
@@ -880,6 +1022,32 @@ class CartScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context);
     final productProvider = Provider.of<ProductProvider>(context);
+    final authProvider = Provider.of<AuthProvider>(context);
+
+    if (!authProvider.isAuthenticated) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Carrito"),
+          centerTitle: true,
+          backgroundColor: Colors.pinkAccent,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Debes iniciar sesión para ver el carrito'),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/auth', arguments: '/cart');
+                },
+                child: const Text('Iniciar Sesión'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
