@@ -1,8 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  await Firebase.initializeApp(
+    options: FirebaseOptions(
+       apiKey: "AIzaSyCOgS_d80TgjchVz1a56OTaGaXGrOuox_Y",
+  authDomain: "labiales-4f8fc.firebaseapp.com",
+  projectId: "labiales-4f8fc",
+  storageBucket: "labiales-4f8fc.firebasestorage.app",
+  messagingSenderId: "754212501817",
+  appId: "1:754212501817:web:9ad52e0d3e6675e50b50e8",
+    ),
+  );
+
   runApp(
     MultiProvider(
       providers: [
@@ -485,7 +502,7 @@ class MainScreen extends StatelessWidget {
               },
             ),
             Consumer<CartProvider>(
-              builder: (_, cart, __) => Badge(
+              builder: (context, cart, _) => Badge(
                 label: cart.itemCount.toString(),
                 child: IconButton(
                   icon: const Icon(Icons.shopping_cart),
