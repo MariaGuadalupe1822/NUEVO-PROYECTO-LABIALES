@@ -1,30 +1,33 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:math';
-import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   await Firebase.initializeApp(
     options: FirebaseOptions(
-       apiKey: "AIzaSyCOgS_d80TgjchVz1a56OTaGaXGrOuox_Y",
-  authDomain: "labiales-4f8fc.firebaseapp.com",
-  projectId: "labiales-4f8fc",
-  storageBucket: "labiales-4f8fc.firebasestorage.app",
-  messagingSenderId: "754212501817",
-  appId: "1:754212501817:web:9ad52e0d3e6675e50b50e8",
+      apiKey: "AIzaSyCOgS_d80TgjchVz1a56OTaGaXGrOuox_Y",
+      authDomain: "labiales-4f8fc.firebaseapp.com",
+      projectId: "labiales-4f8fc",
+      storageBucket: "labiales-4f8fc.appspot.com",
+      messagingSenderId: "754212501817",
+      appId: "1:754212501817:web:9ad52e0d3e6675e50b50e8",
     ),
   );
+
+  final productProvider = ProductProvider();
+  await productProvider.initialize();
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => ProductProvider()),
+        ChangeNotifierProvider(create: (_) => productProvider),
         ChangeNotifierProvider(create: (_) => CartProvider()),
       ],
       child: MyApp(),
@@ -79,14 +82,14 @@ class AuthProvider with ChangeNotifier {
 }
 
 class Product {
-  String id;
-  String name;
-  String shade;
+  final String id;
+  final String name;
+  final String shade;
   int mattePrice;
   int glossPrice;
   int stock;
-  String imagePath;
-  Color color;
+  final String imagePath;
+  final Color color;
 
   Product({
     required this.id,
@@ -133,7 +136,114 @@ class Product {
 }
 
 class ProductProvider with ChangeNotifier {
-  List<Product> _products = [
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<Product> _products = [];
+  StreamSubscription<QuerySnapshot>? _firestoreSubscription;
+
+  List<Product> get products => [..._products];
+
+  Future<void> initialize() async {
+    await _setupFirestoreListener();
+    await _uploadLocalProductsIfNeeded();
+  }
+
+  Future<void> _setupFirestoreListener() async {
+    _firestoreSubscription = _firestore.collection('labiales').snapshots().listen((snapshot) {
+      _products = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Product(
+          id: doc.id,
+          name: data['name'] ?? '',
+          shade: data['shade'] ?? '',
+          mattePrice: data['mattePrice'] ?? 0,
+          glossPrice: data['glossPrice'] ?? 0,
+          stock: data['stock'] ?? 0,
+          imagePath: data['imagePath'] ?? '',
+          color: Color(int.parse(data['color'] ?? '0xFFFF0000')),
+        );
+      }).toList();
+      notifyListeners();
+    }, onError: (e) => print("❌ Firestore error: $e"));
+  }
+
+  Future<void> _uploadLocalProductsIfNeeded() async {
+    final snapshot = await _firestore.collection('labiales').limit(1).get();
+    if (snapshot.docs.isEmpty) {
+      for (final product in _localProducts) {
+        await _syncToFirestore(product);
+      }
+    }
+  }
+
+  Future<void> _syncToFirestore(Product product) async {
+    try {
+      await _firestore.collection('labiales').doc(product.id).set({
+        'id': product.id,
+        'name': product.name,
+        'shade': product.shade,
+        'mattePrice': product.mattePrice,
+        'glossPrice': product.glossPrice,
+        'stock': product.stock,
+        'imagePath': product.imagePath,
+        'color': '0x${product.color.value.toRadixString(16).padLeft(8, '0')}',
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print("❌ Sync error: $e");
+    }
+  }
+
+  void addProduct(Product product) {
+    _products.add(product);
+    notifyListeners();
+    _syncToFirestore(product);
+  }
+
+  void updateProduct(String id, Product newProduct) {
+    final index = _products.indexWhere((prod) => prod.id == id);
+    if (index >= 0) {
+      _products[index] = newProduct;
+      notifyListeners();
+      _syncToFirestore(newProduct);
+    }
+  }
+
+  void removeProduct(String id) {
+    _products.removeWhere((prod) => prod.id == id);
+    notifyListeners();
+    _firestore.collection('labiales').doc(id).delete()
+      .catchError((e) => print("❌ Delete error: $e"));
+  }
+
+  Product findById(String id) {
+    return _products.firstWhere((prod) => prod.id == id);
+  }
+
+  void updateProductPrices(String id, int newMattePrice, int newGlossPrice) {
+    final index = _products.indexWhere((prod) => prod.id == id);
+    if (index >= 0) {
+      _products[index].mattePrice = newMattePrice;
+      _products[index].glossPrice = newGlossPrice;
+      notifyListeners();
+      _syncToFirestore(_products[index]);
+    }
+  }
+
+  void decreaseStock(String id, int quantity) {
+    final index = _products.indexWhere((prod) => prod.id == id);
+    if (index >= 0) {
+      _products[index].stock -= quantity;
+      notifyListeners();
+      _syncToFirestore(_products[index]);
+    }
+  }
+
+  @override
+  void dispose() {
+    _firestoreSubscription?.cancel();
+    super.dispose();
+  }
+
+  static final List<Product> _localProducts = [
     Product(
       id: '1',
       name: "Saint",
@@ -195,47 +305,6 @@ class ProductProvider with ChangeNotifier {
       color: Colors.deepOrange,
     ),
   ];
-
-  List<Product> get products => [..._products];
-
-  void addProduct(Product product) {
-    _products.add(product);
-    notifyListeners();
-  }
-
-  void updateProduct(String id, Product newProduct) {
-    final index = _products.indexWhere((prod) => prod.id == id);
-    if (index >= 0) {
-      _products[index] = newProduct;
-      notifyListeners();
-    }
-  }
-
-  void removeProduct(String id) {
-    _products.removeWhere((prod) => prod.id == id);
-    notifyListeners();
-  }
-
-  Product findById(String id) {
-    return _products.firstWhere((prod) => prod.id == id);
-  }
-
-  void updateProductPrices(String id, int newMattePrice, int newGlossPrice) {
-    final index = _products.indexWhere((prod) => prod.id == id);
-    if (index >= 0) {
-      _products[index].mattePrice = newMattePrice;
-      _products[index].glossPrice = newGlossPrice;
-      notifyListeners();
-    }
-  }
-
-  void decreaseStock(String id, int quantity) {
-    final index = _products.indexWhere((prod) => prod.id == id);
-    if (index >= 0) {
-      _products[index].stock -= quantity;
-      notifyListeners();
-    }
-  }
 }
 
 class CartItem {
@@ -271,7 +340,7 @@ class CartProvider with ChangeNotifier {
     );
 
     if (existingItemIndex >= 0) {
-      _cartItems[existingItemIndex].quantity += 2; // Incrementa en 2
+      _cartItems[existingItemIndex].quantity += 2;
     } else {
       _cartItems.add(CartItem(
         id: DateTime.now().toString(),
@@ -313,9 +382,7 @@ class CartProvider with ChangeNotifier {
     );
   }
 
-  int get itemCount {
-    return _cartItems.length;
-  }
+  int get itemCount => _cartItems.length;
 
   void clearCart() {
     _cartItems.clear();
@@ -332,160 +399,17 @@ class CartProvider with ChangeNotifier {
 
   void completePurchase(ProductProvider productProvider) {
     final itemsToPurchase = _cartItems.where((item) => item.isSelected).toList();
-    
     for (var item in itemsToPurchase) {
       productProvider.decreaseStock(item.productId, item.quantity);
     }
-    
     _cartItems.removeWhere((item) => item.isSelected);
     notifyListeners();
-  }
-}
-
-class AuthScreen extends StatelessWidget {
-  final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final String? redirectRoute;
-
-  AuthScreen({this.redirectRoute});
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.pink.shade50,
-              Colors.pink.shade100,
-            ],
-          ),
-        ),
-        child: Center(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Card(
-                elevation: 8,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.face_retouching_natural,
-                          size: 80,
-                          color: Colors.pinkAccent,
-                        ),
-                        const SizedBox(height: 20),
-                        Text(
-                          'Belleza en tus labios',
-                          style: Theme.of(context).textTheme.headlineMedium,
-                        ),
-                        const SizedBox(height: 30),
-                        TextFormField(
-                          controller: _usernameController,
-                          decoration: InputDecoration(
-                            labelText: 'Usuario',
-                            prefixIcon: Icon(Icons.person, color: Colors.pink),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Ingresa tu usuario';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: true,
-                          decoration: InputDecoration(
-                            labelText: 'Contraseña',
-                            prefixIcon: Icon(Icons.lock, color: Colors.pink),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Ingresa tu contraseña';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 30),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.pinkAccent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              elevation: 5,
-                            ),
-                            onPressed: () {
-                              if (_formKey.currentState!.validate()) {
-                                bool isAuthenticated = authProvider.login(
-                                  _usernameController.text,
-                                  _passwordController.text,
-                                );
-                                if (isAuthenticated) {
-                                  if (redirectRoute != null) {
-                                    Navigator.pushReplacementNamed(context, redirectRoute!);
-                                  } else {
-                                    Navigator.pushReplacementNamed(context, '/home');
-                                  }
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Credenciales incorrectas'),
-                                      behavior: SnackBarBehavior.floating,
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                            child: const Text(
-                              'INICIAR SESIÓN',
-                              style: TextStyle(fontSize: 16),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 
 class MainScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -497,17 +421,17 @@ class MainScreen extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.logout),
               onPressed: () {
-                authProvider.logout();
+                Provider.of<AuthProvider>(context, listen: false).logout();
                 Navigator.pushReplacementNamed(context, '/');
               },
             ),
             Consumer<CartProvider>(
               builder: (context, cart, _) => Badge(
-                label: cart.itemCount.toString(),
+                label: Text(cart.itemCount.toString()),
                 child: IconButton(
                   icon: const Icon(Icons.shopping_cart),
                   onPressed: () {
-                    if (authProvider.isAuthenticated) {
+                    if (Provider.of<AuthProvider>(context, listen: false).isAuthenticated) {
                       Navigator.pushNamed(context, '/cart');
                     } else {
                       Navigator.pushNamed(context, '/auth', arguments: '/cart');
@@ -682,7 +606,7 @@ class ProductCard extends StatelessWidget {
           if (isInCart) {
             cartProvider.updateQuantity(
               existingItem.id, 
-              existingItem.quantity + 2, // Incrementa en 2
+              existingItem.quantity + 2,
             );
           } else {
             cartProvider.addToCart(product, isMatte);
@@ -988,7 +912,7 @@ class InventoryScreen extends StatelessWidget {
                 mainAxisSpacing: 10,
                 childAspectRatio: 1,
               ),
-              itemCount: availableImages.length + 1, // +1 para la opción original
+              itemCount: availableImages.length + 1,
               itemBuilder: (context, index) {
                 if (index == 0) {
                   return GestureDetector(
@@ -1028,6 +952,145 @@ class InventoryScreen extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class AuthScreen extends StatelessWidget {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final String? redirectRoute;
+
+  AuthScreen({this.redirectRoute});
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.pink.shade50,
+              Colors.pink.shade100,
+            ],
+          ),
+        ),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.face_retouching_natural,
+                          size: 80,
+                          color: Colors.pinkAccent,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Belleza en tus labios',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                        const SizedBox(height: 30),
+                        TextFormField(
+                          controller: _usernameController,
+                          decoration: InputDecoration(
+                            labelText: 'Usuario',
+                            prefixIcon: Icon(Icons.person, color: Colors.pink),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Ingresa tu usuario';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 20),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: 'Contraseña',
+                            prefixIcon: Icon(Icons.lock, color: Colors.pink),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Ingresa tu contraseña';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 30),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.pinkAccent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 5,
+                            ),
+                            onPressed: () {
+                              if (_formKey.currentState!.validate()) {
+                                bool isAuthenticated = authProvider.login(
+                                  _usernameController.text,
+                                  _passwordController.text,
+                                );
+                                if (isAuthenticated) {
+                                  if (redirectRoute != null) {
+                                    Navigator.pushReplacementNamed(context, redirectRoute!);
+                                  } else {
+                                    Navigator.pushReplacementNamed(context, '/home');
+                                  }
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Credenciales incorrectas'),
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: const Text(
+                              'INICIAR SESIÓN',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1208,12 +1271,9 @@ class CartScreen extends StatelessWidget {
 
 class Badge extends StatelessWidget {
   final Widget child;
-  final String label;
+  final Widget label;
 
-  const Badge({
-    required this.child,
-    required this.label,
-  });
+  const Badge({required this.child, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -1234,14 +1294,7 @@ class Badge extends StatelessWidget {
               minWidth: 16,
               minHeight: 16,
             ),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 10,
-                color: Colors.white,
-              ),
-            ),
+            child: Center(child: label),
           ),
         )
       ],
