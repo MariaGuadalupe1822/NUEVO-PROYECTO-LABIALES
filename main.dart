@@ -252,7 +252,7 @@ class ProductProvider with ChangeNotifier {
       glossPrice: 220,
       stock: 15,
       imagePath: "lib/assets/saint.jpeg",
-      color: Colors.red,
+      color: const Color(0xFFF44336),
     ),
     Product(
       id: '2',
@@ -262,7 +262,7 @@ class ProductProvider with ChangeNotifier {
       glossPrice: 200,
       stock: 20,
       imagePath: "lib/assets/spice.jpeg",
-      color: Colors.pink,
+      color: const Color(0xFFE91E63),
     ),
     Product(
       id: '3',
@@ -272,7 +272,7 @@ class ProductProvider with ChangeNotifier {
       glossPrice: 210,
       stock: 10,
       imagePath: "lib/assets/brownie.jpeg",
-      color: Colors.brown,
+      color: const Color(0xFF795548),
     ),
     Product(
       id: '4',
@@ -282,7 +282,7 @@ class ProductProvider with ChangeNotifier {
       glossPrice: 240,
       stock: 12,
       imagePath: "lib/assets/sweet chocolate.jpeg",
-      color: Colors.brown[800]!,
+      color: const Color(0xFF4E342E),
     ),
     Product(
       id: '5',
@@ -292,7 +292,7 @@ class ProductProvider with ChangeNotifier {
       glossPrice: 230,
       stock: 8,
       imagePath: "lib/assets/maroon.jpeg",
-      color: Colors.deepPurple,
+      color: const Color(0xFF673AB7),
     ),
     Product(
       id: '6',
@@ -302,7 +302,7 @@ class ProductProvider with ChangeNotifier {
       glossPrice: 195,
       stock: 18,
       imagePath: "lib/assets/hazelnut.jpeg",
-      color: Colors.deepOrange,
+      color: const Color(0xFFFF5722),
     ),
   ];
 }
@@ -892,7 +892,7 @@ class InventoryScreen extends StatelessWidget {
       "lib/assets/saint.jpeg",
       "lib/assets/spice.jpeg",
       "lib/assets/brownie.jpeg",
-      "lib/assets/sweet_chocolate.jpeg",
+      "lib/assets/sweet chocolate.jpeg",
       "lib/assets/maroon.jpeg",
       "lib/assets/hazelnut.jpeg",
     ];
