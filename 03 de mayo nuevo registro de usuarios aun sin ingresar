@@ -330,17 +330,25 @@ class AuthProvider with ChangeNotifier {
 
  Future<bool> login(String email, String password, {bool isAdmin = false}) async {
   try {
-    final authResult = await FirebaseAuth.instance
-        .signInWithEmailAndPassword(email: email, password: password);
+    // 1. Buscar usuario en Firestore
+    final query = await _firestore.collection('usuarios')
+        .where('email', isEqualTo: email)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) return false;
+
+    final userDoc = query.docs.first;
+    final storedUser = Usuario.fromFirestore(userDoc);
     
-    // Obtener el token ID para verificar claims
-    final token = await authResult.user!.getIdTokenResult();
-    
-    if (isAdmin && token.claims?['admin'] != true) {
-      await FirebaseAuth.instance.signOut();
-      return false;
-    }
-    
+    // 2. Verificar contraseña cifrada
+    final encryptedPassword = _encryptPassword(password);
+    if (encryptedPassword != storedUser.password) return false;
+
+    // 3. Verificar rol si es admin
+    if (isAdmin && storedUser.rol != 'admin') return false;
+
+    _currentUser = storedUser;
     _isAuthenticated = true;
     notifyListeners();
     return true;
