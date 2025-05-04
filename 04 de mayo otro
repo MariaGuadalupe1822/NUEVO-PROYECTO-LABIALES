@@ -78,7 +78,7 @@ class Product {
   int mattePrice;
   int glossPrice;
   int stock;
-  final String imagePath;
+  String imagePath;
   final Color color;
 
   Product({
@@ -355,10 +355,11 @@ Future<bool> login(String email, String password, {bool isAdmin = false}) async 
     }
 
     // Verificación especial para admin
-    if (isAdmin && storedUser.rol != 'admin') {
-      debugPrint('Usuario no es admin');
-      return false;
-    }
+   // En tu método login del AuthProvider
+if (isAdmin && storedUser.rol != 'admin') {
+  print('❌ El usuario no tiene privilegios de admin');
+  return false;
+}
 
     _currentUser = storedUser;
     _isAuthenticated = true;
@@ -481,95 +482,160 @@ extension on Usuario {
   copyWith({required String password}) {}
 }
 
+
 class ProductProvider with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   List<Product> _products = [];
   StreamSubscription<QuerySnapshot>? _firestoreSubscription;
 
-  List<Product> get products => [..._products];
+  List<Product> get products => List.unmodifiable(_products);
 
   Future<void> initialize() async {
     await _setupFirestoreListener();
+    await _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    try {
+      final snapshot = await _firestore.collection('labiales').get();
+      _products = snapshot.docs.map(_documentToProduct).toList();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading initial data: $e');
+    }
   }
 
   Future<void> _setupFirestoreListener() async {
-    _firestoreSubscription = _firestore.collection('labiales').snapshots().listen((snapshot) {
-      _products = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return Product(
-          id: doc.id,
-          name: data['name'] ?? '',
-          shade: data['shade'] ?? '',
-          mattePrice: data['mattePrice'] ?? 0,
-          glossPrice: data['glossPrice'] ?? 0,
-          stock: data['stock'] ?? 0,
-          imagePath: data['imagePath'] ?? '',
-          color: Color(int.parse(data['color'] ?? '0xFFFF0000')),
-        );
-      }).toList();
-      notifyListeners();
-    }, onError: (e) => print("❌ Firestore error: $e"));
+    _firestoreSubscription?.cancel();
+    
+    _firestoreSubscription = _firestore.collection('labiales').snapshots().listen(
+      (snapshot) {
+        _products = snapshot.docs.map(_documentToProduct).toList();
+        notifyListeners();
+      },
+      onError: (error) => debugPrint('Firestore error: $error'),
+    );
   }
 
-  Future<void> _syncToFirestore(Product product) async {
+  Product _documentToProduct(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return Product(
+      id: doc.id,
+      name: data['name'] ?? '',
+      shade: data['shade'] ?? '',
+      mattePrice: (data['mattePrice'] as num?)?.toInt() ?? 0,
+      glossPrice: (data['glossPrice'] as num?)?.toInt() ?? 0,
+      stock: (data['stock'] as num?)?.toInt() ?? 0,
+      imagePath: data['imagePath'] ?? 'assets/default_product.png',
+      color: _parseColor(data['color']),
+    );
+  }
+
+  Color _parseColor(dynamic colorData) {
     try {
-      await _firestore.collection('labiales').doc(product.id).set({
-        'id': product.id,
-        'name': product.name,
-        'shade': product.shade,
-        'mattePrice': product.mattePrice,
-        'glossPrice': product.glossPrice,
-        'stock': product.stock,
-        'imagePath': product.imagePath,
-        'color': '0x${product.color.value.toRadixString(16).padLeft(8, '0')}',
-      }, SetOptions(merge: true));
+      if (colorData is String) {
+        return Color(int.parse(colorData.replaceFirst('0x', '0xFF')));
+      }
+      return Colors.primaries[Random().nextInt(Colors.primaries.length)];
     } catch (e) {
-      print("❌ Sync error: $e");
+      debugPrint('Error parsing color: $e');
+      return Colors.pink;
     }
   }
 
-  void addProduct(Product product) {
-    _products.add(product);
-    notifyListeners();
-    _syncToFirestore(product);
-  }
-
-  void updateProduct(String id, Product newProduct) {
-    final index = _products.indexWhere((prod) => prod.id == id);
-    if (index >= 0) {
-      _products[index] = newProduct;
+  Future<void> addProduct(Product product) async {
+    try {
+      final docRef = await _firestore.collection('labiales').add(_productToMap(product));
+      final newProduct = product.copyWith(id: docRef.id);
+      _products.add(newProduct);
       notifyListeners();
-      _syncToFirestore(newProduct);
+    } catch (e) {
+      debugPrint('Error adding product: $e');
+      throw Exception('No se pudo agregar el producto');
     }
   }
 
-  void removeProduct(String id) {
-    _products.removeWhere((prod) => prod.id == id);
-    notifyListeners();
-    _firestore.collection('labiales').doc(id).delete()
-      .catchError((e) => print("❌ Delete error: $e"));
+  Future<void> updateProduct(String id, Product newProduct) async {
+    try {
+      final index = _products.indexWhere((p) => p.id == id);
+      if (index != -1) {
+        await _firestore.collection('labiales').doc(id).update(_productToMap(newProduct));
+        _products[index] = newProduct;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error updating product: $e');
+      throw Exception('No se pudo actualizar el producto');
+    }
+  }
+
+  Future<void> removeProduct(String id) async {
+    try {
+      await _firestore.collection('labiales').doc(id).delete();
+      _products.removeWhere((p) => p.id == id);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error removing product: $e');
+      throw Exception('No se pudo eliminar el producto');
+    }
+  }
+
+  Map<String, dynamic> _productToMap(Product product) {
+    return {
+      'name': product.name,
+      'shade': product.shade,
+      'mattePrice': product.mattePrice,
+      'glossPrice': product.glossPrice,
+      'stock': product.stock,
+      'imagePath': product.imagePath,
+      'color': '0x${product.color.value.toRadixString(16).padLeft(8, '0')}',
+    };
   }
 
   Product findById(String id) {
-    return _products.firstWhere((prod) => prod.id == id);
+    return _products.firstWhere(
+      (p) => p.id == id,
+      orElse: () => throw Exception('Producto no encontrado'),
+    );
   }
 
   void updateProductPrices(String id, int newMattePrice, int newGlossPrice) {
-    final index = _products.indexWhere((prod) => prod.id == id);
-    if (index >= 0) {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index != -1) {
       _products[index].mattePrice = newMattePrice;
       _products[index].glossPrice = newGlossPrice;
       notifyListeners();
-      _syncToFirestore(_products[index]);
+      _firestore.collection('labiales').doc(id).update({
+        'mattePrice': newMattePrice,
+        'glossPrice': newGlossPrice,
+      });
     }
   }
 
   void decreaseStock(String id, int quantity) {
-    final index = _products.indexWhere((prod) => prod.id == id);
-    if (index >= 0) {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index != -1 && _products[index].stock >= quantity) {
       _products[index].stock -= quantity;
       notifyListeners();
-      _syncToFirestore(_products[index]);
+      _firestore.collection('labiales').doc(id).update({
+        'stock': _products[index].stock,
+      });
+    }
+  }
+
+  Future<void> updateProductImage(String productId, String newImagePath) async {
+    try {
+      final index = _products.indexWhere((p) => p.id == productId);
+      if (index != -1) {
+        _products[index].imagePath = newImagePath;
+        notifyListeners();
+        await _firestore.collection('labiales').doc(productId).update({
+          'imagePath': newImagePath,
+        });
+      }
+    } catch (e) {
+      debugPrint('Error updating product image: $e');
+      throw Exception('No se pudo actualizar la imagen');
     }
   }
 
