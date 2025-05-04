@@ -396,6 +396,46 @@ Future<bool> login(String email, String password, {bool isAdmin = false}) async 
     }
   }
 
+  Future<void> createAdminUser() async {
+  final firestore = FirebaseFirestore.instance;
+  final authProvider = AuthProvider(); // Tu clase AuthProvider
+  
+  // Datos del admin
+  const adminEmail = 'admin@gmail.com';
+  const plainPassword = 'Admin123456789*'; // Cambia por una contraseña segura
+  final encryptedPassword = authProvider._encryptPassword(plainPassword);
+
+  // Verificar si ya existe
+  final query = await firestore.collection('usuarios')
+      .where('email', isEqualTo: adminEmail)
+      .limit(1)
+      .get();
+
+  if (query.docs.isEmpty) {
+    // Crear nuevo admin
+    await firestore.collection('usuarios').doc(adminEmail).set({
+      'nombre': 'Administrador Principal',
+      'email': adminEmail,
+      'password': encryptedPassword,
+      'rol': 'admin',
+      'telefono': '0000000000',
+      'calle': 'Oficina Admin',
+      'colonia': 'Sistema',
+      'numeroCalle': '0',
+      'referencia': 'Usuario del sistema',
+      'ciudad': 'Virtual',
+      'fechaRegistro': Timestamp.now(),
+      'ultimoAcceso': Timestamp.now(),
+    });
+    print('✅ Usuario admin creado exitosamente');
+  } else {
+    print('⚠️ El usuario admin ya existe');
+  }
+}
+
+// Ejecutar esto en algún lugar de tu código (solo una vez)
+// createAdminUser();
+
   Future<bool> changePassword(String userId, String newPassword) async {
     try {
       final encryptedPassword = _encryptPassword(newPassword);
