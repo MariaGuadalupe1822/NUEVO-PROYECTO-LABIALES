@@ -328,9 +328,8 @@ class AuthProvider with ChangeNotifier {
     return digest.toString();
   }
 
- Future<bool> login(String email, String password, {bool isAdmin = false}) async {
+Future<bool> login(String email, String password, {bool isAdmin = false}) async {
   try {
-    // 1. Buscar el usuario en Firestore por email
     final query = await _firestore.collection('usuarios')
         .where('email', isEqualTo: email)
         .limit(1)
@@ -341,24 +340,22 @@ class AuthProvider with ChangeNotifier {
       return false;
     }
 
-    // 2. Obtener el documento del usuario
     final userDoc = query.docs.first;
     final storedUser = Usuario.fromFirestore(userDoc);
 
-    // 3. Verificar la contraseña (cifrada)
+    // Verificar la contraseña (cifrada)
     final encryptedPassword = _encryptPassword(password);
     if (encryptedPassword != storedUser.password) {
       debugPrint('Contraseña incorrecta');
       return false;
     }
 
-    // 4. Verificación especial para admin
+    // Verificación especial para admin
     if (isAdmin && storedUser.rol != 'admin') {
       debugPrint('Usuario no es admin');
       return false;
     }
 
-    // 5. Si todo está bien, autenticar
     _currentUser = storedUser;
     _isAuthenticated = true;
     notifyListeners();
@@ -931,7 +928,7 @@ class MainScreen extends StatelessWidget {
                 }
               },
             ),
-            Consumer<AuthProvider>(
+   Consumer<AuthProvider>(
   builder: (context, auth, child) {
     if (auth.isAuthenticated && auth.currentUser?.rol == 'admin') {
       return const InventoryScreen();
@@ -1605,7 +1602,7 @@ class AdminLoginScreen extends StatelessWidget {
                     bool isAuthenticated = await authProvider.login(
                       _emailController.text,
                       _passwordController.text,
-                      isAdmin: true, // Esto activa la verificación de admin
+                      isAdmin: true,
                     );
                     
                     if (isAuthenticated) {
