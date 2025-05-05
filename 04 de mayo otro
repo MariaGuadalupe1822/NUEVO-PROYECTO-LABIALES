@@ -559,7 +559,16 @@ class ProductProvider with ChangeNotifier {
     try {
       final index = _products.indexWhere((p) => p.id == id);
       if (index != -1) {
-        await _firestore.collection('labiales').doc(id).update(_productToMap(newProduct));
+        await _firestore.collection('labiales').doc(id).update({
+          'name': newProduct.name,
+          'shade': newProduct.shade,
+          'mattePrice': newProduct.mattePrice,
+          'glossPrice': newProduct.glossPrice,
+          'stock': newProduct.stock,
+          'imagePath': newProduct.imagePath,
+          'color': '0x${newProduct.color.value.toRadixString(16).padLeft(8, '0')}',
+        });
+        
         _products[index] = newProduct;
         notifyListeners();
       }
@@ -1343,96 +1352,114 @@ class InventoryScreen extends StatelessWidget {
     );
   }
 
-  void _showEditProductDialog(BuildContext context, Product product) {
-    final productProvider = Provider.of<ProductProvider>(context, listen: false);
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    final formKey = GlobalKey<FormState>();
-    Product editedProduct = product.copyWith();
-    String originalImagePath = product.imagePath;
+ void _showEditProductDialog(BuildContext context, Product product) {
+  final productProvider = Provider.of<ProductProvider>(context, listen: false);
+  final cartProvider = Provider.of<CartProvider>(context, listen: false);
+  final formKey = GlobalKey<FormState>();
+  Product editedProduct = product.copyWith();
+  String originalImagePath = product.imagePath;
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text("Editar producto"),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        initialValue: product.name,
-                        decoration: const InputDecoration(labelText: "Nombre"),
-                        onSaved: (value) => editedProduct = editedProduct.copyWith(name: value),
-                      ),
-                      TextFormField(
-                        initialValue: product.shade,
-                        decoration: const InputDecoration(labelText: "Tono"),
-                        onSaved: (value) => editedProduct = editedProduct.copyWith(shade: value),
-                      ),
-                      TextFormField(
-                        initialValue: product.mattePrice.toString(),
-                        decoration: const InputDecoration(labelText: "Precio Mate"),
-                        keyboardType: TextInputType.number,
-                        onSaved: (value) => editedProduct =
-                            editedProduct.copyWith(mattePrice: int.parse(value!)),
-                      ),
-                      TextFormField(
-                        initialValue: product.glossPrice.toString(),
-                        decoration: const InputDecoration(labelText: "Precio Gloss"),
-                        keyboardType: TextInputType.number,
-                        onSaved: (value) => editedProduct =
-                            editedProduct.copyWith(glossPrice: int.parse(value!)),
-                      ),
-                      TextFormField(
-                        initialValue: product.stock.toString(),
-                        decoration: const InputDecoration(labelText: "Stock"),
-                        keyboardType: TextInputType.number,
-                        onSaved: (value) =>
-                            editedProduct = editedProduct.copyWith(stock: int.parse(value!)),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        "Imagen actual:",
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                      const SizedBox(height: 5),
-                      Image.asset(
-                        editedProduct.imagePath,
-                        height: 50,
-                        width: 50,
-                        fit: BoxFit.cover,
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: () {
-                          _showImageSelectionDialog(context, (newImagePath) {
-                            setState(() {
-                              editedProduct = editedProduct.copyWith(imagePath: newImagePath);
-                            });
-                          }, originalImagePath);
-                        },
-                        child: const Text("Cambiar Imagen"),
-                      ),
-                    ],
-                  ),
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text("Editar producto"),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      initialValue: product.name,
+                      decoration: const InputDecoration(labelText: "Nombre"),
+                      onSaved: (value) => editedProduct = editedProduct.copyWith(name: value ?? product.name),
+                    ),
+                    TextFormField(
+                      initialValue: product.shade,
+                      decoration: const InputDecoration(labelText: "Tono"),
+                      onSaved: (value) => editedProduct = editedProduct.copyWith(shade: value ?? product.shade),
+                    ),
+                    TextFormField(
+                      initialValue: product.mattePrice.toString(),
+                      decoration: const InputDecoration(labelText: "Precio Mate"),
+                      keyboardType: TextInputType.number,
+                      onSaved: (value) => editedProduct =
+                          editedProduct.copyWith(mattePrice: int.parse(value ?? product.mattePrice.toString())),
+                    ),
+                    TextFormField(
+                      initialValue: product.glossPrice.toString(),
+                      decoration: const InputDecoration(labelText: "Precio Gloss"),
+                      keyboardType: TextInputType.number,
+                      onSaved: (value) => editedProduct =
+                          editedProduct.copyWith(glossPrice: int.parse(value ?? product.glossPrice.toString())),
+                    ),
+                    TextFormField(
+                      initialValue: product.stock.toString(),
+                      decoration: const InputDecoration(labelText: "Stock"),
+                      keyboardType: TextInputType.number,
+                      onSaved: (value) =>
+                          editedProduct = editedProduct.copyWith(stock: int.parse(value ?? product.stock.toString())),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      "Imagen actual:",
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 5),
+                    Image.asset(
+                      editedProduct.imagePath,
+                      height: 50,
+                      width: 50,
+                      fit: BoxFit.cover,
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        _showImageSelectionDialog(context, (newImagePath) {
+                          setState(() {
+                            editedProduct = editedProduct.copyWith(imagePath: newImagePath);
+                          });
+                        }, originalImagePath);
+                      },
+                      child: const Text("Cambiar Imagen"),
+                    ),
+                  ],
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text("Cerrar"),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+            ),
+            actions: [
+              TextButton(
+                child: const Text("Cancelar"),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              ElevatedButton(
+                child: const Text("Guardar"),
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    formKey.currentState!.save();
+                    await productProvider.updateProduct(product.id, editedProduct);
+                    cartProvider.updatePricesFromInventory(productProvider);
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                onPressed: () async {
+                  await productProvider.removeProduct(product.id);
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
 
   void _showImageSelectionDialog(BuildContext context, Function(String) onImageSelected, String originalImagePath) {
     final List<String> availableImages = [
