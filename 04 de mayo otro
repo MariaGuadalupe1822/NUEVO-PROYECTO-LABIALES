@@ -1463,12 +1463,12 @@ class InventoryScreen extends StatelessWidget {
 
   void _showImageSelectionDialog(BuildContext context, Function(String) onImageSelected, String originalImagePath) {
     final List<String> availableImages = [
-      "assets/saint.jpeg",
-      "assets/spice.jpeg",
-      "assets/brownie.jpeg",
-      "assets/sweet chocolate.jpeg",
-      "assets/maroon.jpeg",
-      "assets/hazelnut.jpeg",
+      "lib/assets/saint.jpeg",
+      "lib/assets/spice.jpeg",
+      "lib/assets/brownie.jpeg",
+      "lib/assets/sweet chocolate.jpeg",
+      "lib/assets/Maroon.jpeg",
+      "lib/assets/hazelnut.jpeg",
     ];
 
     showDialog(
