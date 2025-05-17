@@ -1,0 +1,2668 @@
+import 'dart:convert';
+import 'dart:math';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
+import 'dart:async';
+import 'package:crypto/crypto.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  await Firebase.initializeApp(
+    options: FirebaseOptions(
+      apiKey: "AIzaSyCOgS_d80TgjchVz1a56OTaGaXGrOuox_Y",
+      authDomain: "labiales-4f8fc.firebaseapp.com",
+      projectId: "labiales-4f8fc",
+      storageBucket: "labiales-4f8fc.appspot.com",
+      messagingSenderId: "754212501817",
+      appId: "1:754212501817:web:9ad52e0d3e6675e50b50e8",
+    ),
+  );
+
+  final productProvider = ProductProvider();
+  await productProvider.initialize();
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => productProvider),
+        ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProvider(create: (_) => ImageProvider()),
+        ChangeNotifierProvider(create: (_) => SalesProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
+      ],
+      child: MyApp(),
+    ),
+  );
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.pink,
+        fontFamily: 'Georgia',
+        textTheme: const TextTheme(
+          headlineMedium: TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold),
+          bodyLarge: TextStyle(color: Colors.pinkAccent),
+          bodyMedium: TextStyle(color: Colors.pinkAccent),
+        ),
+      ),
+      home: MainScreen(),
+      routes: {
+        '/home': (context) => MainScreen(),
+        '/cart': (context) => CartScreen(),
+        '/auth': (context) => AuthScreen(),
+        '/sales': (context) => SalesHistoryScreen(),
+        '/users': (context) => UserManagementScreen(),
+        '/register': (context) => RegisterScreen(),
+        '/change-password': (context) => ChangePasswordScreen(),
+        '/admin-login': (context) => AdminLoginScreen(),
+      },
+    );
+  }
+}
+
+// Model Classes
+class Product {
+  final String id;
+  final String name;
+  final String shade;
+  int mattePrice;
+  int glossPrice;
+  int stock;
+  String imagePath;
+  final Color color;
+
+  Product({
+    required this.id,
+    required this.name,
+    required this.shade,
+    required this.mattePrice,
+    required this.glossPrice,
+    required this.stock,
+    required this.imagePath,
+    required this.color,
+  });
+
+  Product.empty()
+      : id = '',
+        name = '',
+        shade = '',
+        mattePrice = 0,
+        glossPrice = 0,
+        stock = 0,
+        imagePath = '',
+        color = Colors.pink;
+
+  Product copyWith({
+    String? id,
+    String? name,
+    String? shade,
+    int? mattePrice,
+    int? glossPrice,
+    int? stock,
+    String? imagePath,
+    Color? color,
+  }) {
+    return Product(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      shade: shade ?? this.shade,
+      mattePrice: mattePrice ?? this.mattePrice,
+      glossPrice: glossPrice ?? this.glossPrice,
+      stock: stock ?? this.stock,
+      imagePath: imagePath ?? this.imagePath,
+      color: color ?? this.color,
+    );
+  }
+}
+
+class CartItem {
+  final String id;
+  final String productId;
+  final String name;
+  final bool isMatte;
+  int price;
+  final String imagePath;
+  int quantity;
+  bool isSelected;
+
+  CartItem({
+    required this.id,
+    required this.productId,
+    required this.name,
+    required this.isMatte,
+    required this.price,
+    required this.imagePath,
+    this.quantity = 1,
+    this.isSelected = true,
+  });
+}
+
+class ImagenProducto {
+  final String id;
+  final String productId;
+  final String url;
+  final String path;
+  final bool isMain;
+  final DateTime uploadDate;
+
+  ImagenProducto({
+    required this.id,
+    required this.productId,
+    required this.url,
+    required this.path,
+    this.isMain = false,
+    required this.uploadDate,
+  });
+}
+
+class Venta {
+  final String id;
+  final String userId;
+  final List<CartItem> items;
+  final double total;
+  final DateTime fecha;
+  final String estado;
+  final String? direccionEnvio;
+  final String metodoPago;
+  bool notificada;
+
+  Venta({
+    required this.id,
+    required this.userId,
+    required this.items,
+    required this.total,
+    required this.fecha,
+    this.estado = 'completada',
+    this.direccionEnvio,
+    this.metodoPago = 'efectivo',
+    this.notificada = false,
+  });
+}
+
+
+
+class Usuario {
+  final String id;
+  final String nombre;
+  final String email;
+  final String password;
+  final String? telefono;
+  final String calle;
+  final String colonia;
+  final String numeroCalle;
+  final String referencia;
+  final String ciudad;
+  final DateTime fechaRegistro;
+  final DateTime ultimoAcceso;
+  final String rol;
+
+  Usuario({
+    required this.id,
+    required this.nombre,
+    required this.email,
+    required this.password,
+    this.telefono,
+    required this.calle,
+    required this.colonia,
+    required this.numeroCalle,
+    required this.referencia,
+    required this.ciudad,
+    required this.fechaRegistro,
+    required this.ultimoAcceso,
+    this.rol = 'cliente',
+  });
+
+  // Método para crear un Usuario desde un DocumentSnapshot de Firestore
+  factory Usuario.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return Usuario(
+      id: doc.id,
+      nombre: data['nombre'] ?? '',
+      email: data['email'] ?? '',
+      password: data['password'] ?? '',
+      telefono: data['telefono'],
+      calle: data['calle'] ?? '',
+      colonia: data['colonia'] ?? '',
+      numeroCalle: data['numeroCalle'] ?? '',
+      referencia: data['referencia'] ?? '',
+      ciudad: data['ciudad'] ?? '',
+      fechaRegistro: (data['fechaRegistro'] as Timestamp).toDate(),
+      ultimoAcceso: (data['ultimoAcceso'] as Timestamp).toDate(),
+      rol: data['rol'] ?? 'cliente',
+    );
+  }
+
+  // Método para convertir el Usuario a un Map para Firestore
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'email': email,
+      'password': password,
+      'telefono': telefono,
+      'calle': calle,
+      'colonia': colonia,
+      'numeroCalle': numeroCalle,
+      'referencia': referencia,
+      'ciudad': ciudad,
+      'fechaRegistro': Timestamp.fromDate(fechaRegistro),
+      'ultimoAcceso': Timestamp.fromDate(ultimoAcceso),
+      'rol': rol,
+    };
+  }
+
+  // Método para copiar el Usuario con nuevos valores
+  Usuario copyWith({
+    String? id,
+    String? nombre,
+    String? email,
+    String? password,
+    String? telefono,
+    String? calle,
+    String? colonia,
+    String? numeroCalle,
+    String? referencia,
+    String? ciudad,
+    DateTime? fechaRegistro,
+    DateTime? ultimoAcceso,
+    String? rol,
+  }) {
+    return Usuario(
+      id: id ?? this.id,
+      nombre: nombre ?? this.nombre,
+      email: email ?? this.email,
+      password: password ?? this.password,
+      telefono: telefono ?? this.telefono,
+      calle: calle ?? this.calle,
+      colonia: colonia ?? this.colonia,
+      numeroCalle: numeroCalle ?? this.numeroCalle,
+      referencia: referencia ?? this.referencia,
+      ciudad: ciudad ?? this.ciudad,
+      fechaRegistro: fechaRegistro ?? this.fechaRegistro,
+      ultimoAcceso: ultimoAcceso ?? this.ultimoAcceso,
+      rol: rol ?? this.rol,
+    );
+  }
+
+  // Método para comparar si dos usuarios son iguales
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Usuario &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          email == other.email;
+
+  @override
+  int get hashCode => id.hashCode ^ email.hashCode;
+
+  // Método para representación en String
+  @override
+  String toString() {
+    return 'Usuario{id: $id, nombre: $nombre, email: $email, rol: $rol}';
+  }
+}
+
+// Providers
+class AuthProvider with ChangeNotifier {
+  bool _isAuthenticated = false;
+  Usuario? _currentUser;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  bool get isAuthenticated => _isAuthenticated;
+  Usuario? get currentUser => _currentUser;
+
+  String _encryptPassword(String password) {
+  var bytes = utf8.encode(password);
+  var digest = sha256.convert(bytes);
+  return digest.toString();
+}
+
+void main() {
+  print(_encryptPassword("Admin123456789*")); // Copia este resultado
+}
+
+Future<bool> login(String email, String password, {bool isAdmin = false}) async {
+  try {
+    final query = await _firestore.collection('usuarios')
+        .where('email', isEqualTo: email)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) {
+      debugPrint('Usuario no encontrado');
+      return false;
+    }
+
+    final userDoc = query.docs.first;
+    final storedUser = Usuario.fromFirestore(userDoc);
+
+    // Verificar la contraseña (cifrada)
+    final encryptedPassword = _encryptPassword(password);
+    if (encryptedPassword != storedUser.password) {
+      debugPrint('Contraseña incorrecta');
+      return false;
+    }
+
+    // Verificación especial para admin
+   // En tu método login del AuthProvider
+if (isAdmin && storedUser.rol != 'admin') {
+  print('❌ El usuario no tiene privilegios de admin');
+  return false;
+}
+
+    _currentUser = storedUser;
+    _isAuthenticated = true;
+    notifyListeners();
+    return true;
+  } catch (e) {
+    debugPrint('Error en login: $e');
+    return false;
+  }
+}
+
+  Future<bool> register(Usuario newUser) async {
+    try {
+      final encryptedPassword = _encryptPassword(newUser.password);
+      final userToSave = newUser.copyWith(password: encryptedPassword);
+      
+      final emailQuery = await _firestore.collection('usuarios')
+          .where('email', isEqualTo: newUser.email)
+          .limit(1)
+          .get();
+
+      if (emailQuery.docs.isNotEmpty) {
+        throw "El email ya está registrado";
+      }
+
+      await _firestore.collection('usuarios').add(userToSave.toMap());
+      
+      _isAuthenticated = true;
+      _currentUser = userToSave;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print("Error en registro: $e");
+      rethrow;
+    }
+  }
+
+  Future<void> createAdminUser() async {
+  final firestore = FirebaseFirestore.instance;
+  final authProvider = AuthProvider(); // Tu clase AuthProvider
+  
+  // Datos del admin
+  const adminEmail = 'admin@gmail.com';
+  const plainPassword = 'Admin123456789*'; // Cambia por una contraseña segura
+  final encryptedPassword = authProvider._encryptPassword(plainPassword);
+
+  // Verificar si ya existe
+  final query = await firestore.collection('usuarios')
+      .where('email', isEqualTo: adminEmail)
+      .limit(1)
+      .get();
+
+  if (query.docs.isEmpty) {
+    // Crear nuevo admin
+    await firestore.collection('usuarios').doc(adminEmail).set({
+      'nombre': 'Administrador Principal',
+      'email': adminEmail,
+      'password': encryptedPassword,
+      'rol': 'admin',
+      'telefono': '0000000000',
+      'calle': 'Oficina Admin',
+      'colonia': 'Sistema',
+      'numeroCalle': '0',
+      'referencia': 'Usuario del sistema',
+      'ciudad': 'Virtual',
+      'fechaRegistro': Timestamp.now(),
+      'ultimoAcceso': Timestamp.now(),
+    });
+    print('✅ Usuario admin creado exitosamente');
+  } else {
+    print('⚠️ El usuario admin ya existe');
+  }
+}
+
+// Ejecutar esto en algún lugar de tu código (solo una vez)
+// createAdminUser();
+
+  Future<bool> changePassword(String userId, String newPassword) async {
+    try {
+      final encryptedPassword = _encryptPassword(newPassword);
+      await _firestore.collection('usuarios').doc(userId).update({
+        'password': encryptedPassword,
+        'ultimoAcceso': Timestamp.now(),
+      });
+      
+      if (_currentUser != null) {
+        _currentUser = Usuario(
+          id: _currentUser!.id,
+          nombre: _currentUser!.nombre,
+          email: _currentUser!.email,
+          password: encryptedPassword,
+          telefono: _currentUser!.telefono,
+          calle: _currentUser!.calle,
+          colonia: _currentUser!.colonia,
+          numeroCalle: _currentUser!.numeroCalle,
+          referencia: _currentUser!.referencia,
+          ciudad: _currentUser!.ciudad,
+          fechaRegistro: _currentUser!.fechaRegistro,
+          ultimoAcceso: DateTime.now(),
+          rol: _currentUser!.rol,
+        );
+      }
+      
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print("Error al cambiar contraseña: $e");
+      return false;
+    }
+  }
+
+  void logout() {
+    _isAuthenticated = false;
+    _currentUser = null;
+    notifyListeners();
+  }
+}
+
+extension on Usuario {
+  copyWith({required String password}) {}
+}
+
+
+class ProductProvider with ChangeNotifier {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<Product> _products = [];
+  StreamSubscription<QuerySnapshot>? _firestoreSubscription;
+
+  List<Product> get products => List.unmodifiable(_products);
+
+  Future<void> initialize() async {
+    await _setupFirestoreListener();
+    await _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    try {
+      final snapshot = await _firestore.collection('labiales').get();
+      _products = snapshot.docs.map(_documentToProduct).toList();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading initial data: $e');
+    }
+  }
+
+  Future<void> _setupFirestoreListener() async {
+    _firestoreSubscription?.cancel();
+    
+    _firestoreSubscription = _firestore.collection('labiales').snapshots().listen(
+      (snapshot) {
+        _products = snapshot.docs.map(_documentToProduct).toList();
+        notifyListeners();
+      },
+      onError: (error) => debugPrint('Firestore error: $error'),
+    );
+  }
+
+  Product _documentToProduct(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return Product(
+      id: doc.id,
+      name: data['name'] ?? '',
+      shade: data['shade'] ?? '',
+      mattePrice: (data['mattePrice'] as num?)?.toInt() ?? 0,
+      glossPrice: (data['glossPrice'] as num?)?.toInt() ?? 0,
+      stock: (data['stock'] as num?)?.toInt() ?? 0,
+      imagePath: data['imagePath'] ?? 'assets/default_product.png',
+      color: _parseColor(data['color']),
+    );
+  }
+
+  Color _parseColor(dynamic colorData) {
+    try {
+      if (colorData is String) {
+        return Color(int.parse(colorData.replaceFirst('0x', '0xFF')));
+      }
+      return Colors.primaries[Random().nextInt(Colors.primaries.length)];
+    } catch (e) {
+      debugPrint('Error parsing color: $e');
+      return Colors.pink;
+    }
+  }
+
+  Future<void> addProduct(Product product) async {
+    try {
+      final docRef = await _firestore.collection('labiales').add(_productToMap(product));
+      final newProduct = product.copyWith(id: docRef.id);
+      _products.add(newProduct);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error adding product: $e');
+      throw Exception('No se pudo agregar el producto');
+    }
+  }
+
+  Future<void> updateProduct(String id, Product newProduct) async {
+    try {
+      final index = _products.indexWhere((p) => p.id == id);
+      if (index != -1) {
+        await _firestore.collection('labiales').doc(id).update({
+          'name': newProduct.name,
+          'shade': newProduct.shade,
+          'mattePrice': newProduct.mattePrice,
+          'glossPrice': newProduct.glossPrice,
+          'stock': newProduct.stock,
+          'imagePath': newProduct.imagePath,
+          'color': '0x${newProduct.color.value.toRadixString(16).padLeft(8, '0')}',
+        });
+        
+        _products[index] = newProduct;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error updating product: $e');
+      throw Exception('No se pudo actualizar el producto');
+    }
+  }
+
+  Future<void> removeProduct(String id) async {
+    try {
+      await _firestore.collection('labiales').doc(id).delete();
+      _products.removeWhere((p) => p.id == id);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error removing product: $e');
+      throw Exception('No se pudo eliminar el producto');
+    }
+  }
+
+  Map<String, dynamic> _productToMap(Product product) {
+    return {
+      'name': product.name,
+      'shade': product.shade,
+      'mattePrice': product.mattePrice,
+      'glossPrice': product.glossPrice,
+      'stock': product.stock,
+      'imagePath': product.imagePath,
+      'color': '0x${product.color.value.toRadixString(16).padLeft(8, '0')}',
+    };
+  }
+
+  Product findById(String id) {
+    return _products.firstWhere(
+      (p) => p.id == id,
+      orElse: () => throw Exception('Producto no encontrado'),
+    );
+  }
+
+  void updateProductPrices(String id, int newMattePrice, int newGlossPrice) {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index != -1) {
+      _products[index].mattePrice = newMattePrice;
+      _products[index].glossPrice = newGlossPrice;
+      notifyListeners();
+      _firestore.collection('labiales').doc(id).update({
+        'mattePrice': newMattePrice,
+        'glossPrice': newGlossPrice,
+      });
+    }
+  }
+
+  void decreaseStock(String id, int quantity) {
+    final index = _products.indexWhere((p) => p.id == id);
+    if (index != -1 && _products[index].stock >= quantity) {
+      _products[index].stock -= quantity;
+      notifyListeners();
+      _firestore.collection('labiales').doc(id).update({
+        'stock': _products[index].stock,
+      });
+    }
+  }
+
+  Future<void> updateProductImage(String productId, String newImagePath) async {
+    try {
+      final index = _products.indexWhere((p) => p.id == productId);
+      if (index != -1) {
+        _products[index].imagePath = newImagePath;
+        notifyListeners();
+        await _firestore.collection('labiales').doc(productId).update({
+          'imagePath': newImagePath,
+        });
+      }
+    } catch (e) {
+      debugPrint('Error updating product image: $e');
+      throw Exception('No se pudo actualizar la imagen');
+    }
+  }
+
+  @override
+  void dispose() {
+    _firestoreSubscription?.cancel();
+    super.dispose();
+  }
+}
+
+class CartProvider with ChangeNotifier {
+  List<CartItem> _cartItems = [];
+
+  List<CartItem> get cartItems => [..._cartItems];
+
+  void addToCart(Product product, bool isMatte) {
+    final existingItemIndex = _cartItems.indexWhere(
+      (item) => item.productId == product.id && item.isMatte == isMatte,
+    );
+
+    if (existingItemIndex >= 0) {
+      _cartItems[existingItemIndex].quantity += 1;
+    } else {
+      _cartItems.add(CartItem(
+        id: DateTime.now().toString(),
+        productId: product.id,
+        name: product.name,
+        isMatte: isMatte,
+        price: isMatte ? product.mattePrice : product.glossPrice,
+        imagePath: product.imagePath,
+      ));
+    }
+    notifyListeners();
+  }
+
+  void removeFromCart(String itemId) {
+    _cartItems.removeWhere((item) => item.id == itemId);
+    notifyListeners();
+  }
+
+  void updateQuantity(String itemId, int quantity) {
+    final index = _cartItems.indexWhere((item) => item.id == itemId);
+    if (index >= 0) {
+      _cartItems[index].quantity = quantity;
+      notifyListeners();
+    }
+  }
+
+  void toggleSelection(String itemId) {
+    final index = _cartItems.indexWhere((item) => item.id == itemId);
+    if (index >= 0) {
+      _cartItems[index].isSelected = !_cartItems[index].isSelected;
+      notifyListeners();
+    }
+  }
+
+  int get totalPrice {
+    return _cartItems.fold(
+      0, 
+      (sum, item) => item.isSelected ? sum + (item.price * item.quantity) : sum,
+    );
+  }
+
+  int get itemCount => _cartItems.length;
+
+  void clearCart() {
+    _cartItems.clear();
+    notifyListeners();
+  }
+
+  void updatePricesFromInventory(ProductProvider productProvider) {
+    for (var item in _cartItems) {
+      final product = productProvider.findById(item.productId);
+      item.price = item.isMatte ? product.mattePrice : product.glossPrice;
+    }
+    notifyListeners();
+  }
+
+  void completePurchase(BuildContext context) {
+    final productProvider = Provider.of<ProductProvider>(context, listen: false);
+    final salesProvider = Provider.of<SalesProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    final itemsToPurchase = _cartItems.where((item) => item.isSelected).toList();
+    final purchaseTotal = itemsToPurchase.fold(0, (sum, item) => sum + (item.price * item.quantity));
+    
+    if (itemsToPurchase.isNotEmpty && authProvider.currentUser != null) {
+      final nuevaVenta = Venta(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        userId: authProvider.currentUser!.id,
+        items: itemsToPurchase,
+        total: purchaseTotal.toDouble(),
+        fecha: DateTime.now(),
+      );
+      
+      salesProvider.addSale(nuevaVenta);
+      
+      for (var item in itemsToPurchase) {
+        productProvider.decreaseStock(item.productId, item.quantity);
+      }
+      
+      _cartItems.removeWhere((item) => item.isSelected);
+      notifyListeners();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Compra realizada por \$${purchaseTotal.toStringAsFixed(2)}"),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Selecciona al menos un producto"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+class ImageProvider with ChangeNotifier {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<ImagenProducto> _imagenes = [];
+
+  List<ImagenProducto> get imagenes => [..._imagenes];
+
+  Future<void> uploadImage(String productId, String imagePath) async {
+    try {
+      final downloadURL = 'https://example.com/image.jpg';
+      
+      final nuevaImagen = ImagenProducto(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        productId: productId,
+        url: downloadURL,
+        path: imagePath,
+        uploadDate: DateTime.now(),
+      );
+
+      await _firestore.collection('imagenes').doc(nuevaImagen.id).set({
+        'id': nuevaImagen.id,
+        'productId': nuevaImagen.productId,
+        'url': nuevaImagen.url,
+        'path': nuevaImagen.path,
+        'isMain': nuevaImagen.isMain,
+        'uploadDate': Timestamp.fromDate(nuevaImagen.uploadDate),
+      });
+
+      _imagenes.add(nuevaImagen);
+      notifyListeners();
+    } catch (e) {
+      print("Error al subir imagen: $e");
+    }
+  }
+
+  Future<void> fetchImagesForProduct(String productId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('imagenes')
+          .where('productId', isEqualTo: productId)
+          .get();
+
+      _imagenes = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return ImagenProducto(
+          id: doc.id,
+          productId: data['productId'],
+          url: data['url'],
+          path: data['path'],
+          isMain: data['isMain'] ?? false,
+          uploadDate: (data['uploadDate'] as Timestamp).toDate(),
+        );
+      }).toList();
+      
+      notifyListeners();
+    } catch (e) {
+      print("Error al obtener imágenes: $e");
+    }
+  }
+}
+
+class SalesProvider with ChangeNotifier {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<Venta> _ventas = [];
+
+  List<Venta> get ventas => [..._ventas];
+
+  Future<void> addSale(Venta venta) async {
+    try {
+      await _firestore.collection('ventas').doc(venta.id).set({
+        'id': venta.id,
+        'userId': venta.userId,
+        'items': venta.items.map((item) => {
+          'id': item.id,
+          'productId': item.productId,
+          'name': item.name,
+          'isMatte': item.isMatte,
+          'price': item.price,
+          'imagePath': item.imagePath,
+          'quantity': item.quantity,
+        }).toList(),
+        'total': venta.total,
+        'fecha': Timestamp.fromDate(venta.fecha),
+        'estado': venta.estado,
+        'direccionEnvio': venta.direccionEnvio,
+        'metodoPago': venta.metodoPago,
+        'notificada': venta.notificada,
+      });
+
+      _ventas.add(venta);
+      notifyListeners();
+      
+      await _sendEmailNotification(venta);
+    } catch (e) {
+      print("Error al registrar venta: $e");
+    }
+  }
+
+Future<void> _sendEmailNotification(Venta venta) async {
+  try {
+    const emailjsUserId = 'OuzKLz3fFfdnFnutn';
+    const serviceId = 'service_gn1zkea';
+    const adminTemplateId = 'template_kno7jhg';
+    const clientTemplateId = 'template_43byimk';
+
+    // Obtener datos del cliente con más validaciones
+    final userDoc = await FirebaseFirestore.instance
+        .collection('usuarios')
+        .doc(venta.userId)
+        .get();
+    
+    if (!userDoc.exists) {
+      print('Usuario no encontrado para enviar correo');
+      return;
+    }
+
+    final userData = userDoc.data() as Map<String, dynamic>;
+    final userEmail = userData['email']?.toString() ?? '';
+    final userName = userData['nombre']?.toString() ?? 'Cliente';
+    final address = '${userData['calle'] ?? ''} ${userData['numeroCalle'] ?? ''}, '
+                   '${userData['colonia'] ?? ''}, ${userData['ciudad'] ?? ''}';
+
+    if (userEmail.isEmpty) {
+      print('Email del cliente está vacío');
+      return;
+    }
+
+    // Preparar datos para el cliente con valores por defecto
+   // Preparar datos para el cliente con valores por defecto
+final clientTemplateParams = {
+  'to_email': userEmail,
+  'to_name': userName,
+  'order_id': venta.id.substring(0, 8),
+  'total': venta.total.toStringAsFixed(2),
+  'items': venta.items.map((item) => 
+    '${item.quantity}x ${item.name} (${item.isMatte ? "Mate" : "Gloss"}) - \$${item.price}'
+  ).join('<br>'), // Cambiado de '\n' a '<br>' para HTML
+  'date': venta.fecha.toString(),
+  'delivery_address': address.isNotEmpty ? address : 'No especificada',
+  'customer_name': userName,
+};
+
+    // Enviar correo al CLIENTE con más manejo de errores
+    try {
+      final clientResponse = await http.post(
+        Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
+        headers: {
+          'Content-Type': 'application/json',
+          'origin': 'http://localhost', // Agrega esto si es necesario
+          'User-Agent': 'Dart/2.18 (dart:io)',
+        },
+        body: json.encode({
+          'service_id': serviceId,
+          'template_id': clientTemplateId,
+          'user_id': emailjsUserId,
+          'template_params': clientTemplateParams,
+          'accessToken': 'YOUR_ACCESS_TOKEN' // Si usas autenticación adicional
+        }),
+      );
+
+      print('Respuesta del cliente: ${clientResponse.statusCode}');
+      print('Cuerpo de respuesta: ${clientResponse.body}');
+
+      if (clientResponse.statusCode == 200) {
+        print('Correo enviado exitosamente al cliente');
+      } else {
+        print('Error al enviar correo al cliente: ${clientResponse.statusCode}');
+        print('Detalles: ${clientResponse.body}');
+      }
+    } catch (e) {
+      print('Error en el envío al cliente: $e');
+    }
+
+    // [Opcional] Enviar correo al ADMIN
+    final adminResponse = await http.post(
+      Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'service_id': serviceId,
+        'template_id': adminTemplateId,
+        'user_id': emailjsUserId,
+        'template_params': {
+          'to_email': 'maguadalupevillasana@gmail.com',
+          'to_name': 'Administrador',
+          'sale_id': venta.id,
+          'total': venta.total.toStringAsFixed(2),
+          'items': venta.items.map((item) => 
+            '${item.quantity}x ${item.name} (${item.isMatte ? "Mate" : "Gloss"}) - \$${item.price}'
+          ).join('\n'),
+          'date': venta.fecha.toString(),
+          'customer_email': userEmail,
+          'customer_name': userName,
+        }
+      }),
+    );
+
+  } catch (e) {
+    print("Error general al enviar email: $e");
+  }
+}
+
+  Future<void> fetchSales() async {
+    try {
+      final snapshot = await _firestore.collection('ventas').get();
+      _ventas = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Venta(
+          id: doc.id,
+          userId: data['userId'],
+          items: (data['items'] as List).map((item) => CartItem(
+            id: item['id'],
+            productId: item['productId'],
+            name: item['name'],
+            isMatte: item['isMatte'],
+            price: item['price'],
+            imagePath: item['imagePath'],
+            quantity: item['quantity'],
+          )).toList(),
+          total: data['total'],
+          fecha: (data['fecha'] as Timestamp).toDate(),
+          estado: data['estado'],
+          direccionEnvio: data['direccionEnvio'],
+          metodoPago: data['metodoPago'],
+          notificada: data['notificada'] ?? false,
+        );
+      }).toList();
+      notifyListeners();
+    } catch (e) {
+      print("Error al obtener ventas: $e");
+    }
+  }
+}
+
+class UserProvider with ChangeNotifier {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<Usuario> _usuarios = [];
+
+  List<Usuario> get usuarios => [..._usuarios];
+
+  Future<void> addUser(Usuario usuario) async {
+    try {
+      await _firestore.collection('usuarios').doc(usuario.id).set(usuario.toMap());
+      _usuarios.add(usuario);
+      notifyListeners();
+    } catch (e) {
+      print("Error al agregar usuario: $e");
+    }
+  }
+
+  Future<Usuario?> getUser(String userId) async {
+    try {
+      final doc = await _firestore.collection('usuarios').doc(userId).get();
+      if (doc.exists) {
+        return Usuario.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      print("Error al obtener usuario: $e");
+      return null;
+    }
+  }
+
+  Future<void> fetchUsers() async {
+    try {
+      final snapshot = await _firestore.collection('usuarios').get();
+      _usuarios = snapshot.docs.map((doc) => Usuario.fromFirestore(doc)).toList();
+      notifyListeners();
+    } catch (e) {
+      print("Error al obtener usuarios: $e");
+    }
+  }
+}
+
+// Screens
+class MainScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final isAdmin = authProvider.currentUser?.rol == 'admin';
+
+    return DefaultTabController(
+      length: isAdmin ? 2 : 1, // Solo mostrar 1 tab si no es admin
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("Tienda de Labiales"),
+          centerTitle: true,
+          backgroundColor: Colors.pinkAccent,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: () {
+                Provider.of<AuthProvider>(context, listen: false).logout();
+                Navigator.pushReplacementNamed(context, '/');
+              },
+            ),
+            Consumer<CartProvider>(
+              builder: (context, cart, _) => Badge(
+                label: Text(cart.itemCount.toString()),
+                child: IconButton(
+                  icon: const Icon(Icons.shopping_cart),
+                  onPressed: () {
+                    if (Provider.of<AuthProvider>(context, listen: false).isAuthenticated) {
+                      Navigator.pushNamed(context, '/cart');
+                    } else {
+                      Navigator.pushNamed(context, '/auth', arguments: '/cart');
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
+          bottom: isAdmin 
+              ? const TabBar(
+                  tabs: [
+                    Tab(icon: Icon(Icons.store), text: "Compras"),
+                    Tab(icon: Icon(Icons.inventory), text: "Inventario"),
+                  ],
+                )
+              : null, // No mostrar tabs si no es admin
+        ),
+        body: isAdmin
+            ? TabBarView(
+                children: [
+                  const ProductGridScreen(),
+                  Consumer<AuthProvider>(
+                    builder: (context, auth, child) {
+                      if (auth.isAuthenticated && auth.currentUser?.rol == 'admin') {
+                        return const InventoryScreen();
+                      } else {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('Acceso restringido a administradores'),
+                              const SizedBox(height: 20),
+                              ElevatedButton(
+                                onPressed: () {
+                                  Navigator.pushNamed(context, '/admin-login');
+                                },
+                                child: const Text('Ingresar como Admin'),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              )
+            : const ProductGridScreen(), // Mostrar solo compras si no es admin
+      ),
+    );
+  }
+}
+
+class ProductGridScreen extends StatelessWidget {
+  const ProductGridScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final products = Provider.of<ProductProvider>(context).products;
+    return GridView.builder(
+      padding: const EdgeInsets.all(10),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.8,
+      ),
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        return ProductCard(product: products[index]);
+      },
+    );
+  }
+}
+
+class ProductCard extends StatelessWidget {
+  final Product product;
+
+  const ProductCard({required this.product, Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(15),
+      ),
+      elevation: 5,
+      color: Colors.pink[50],
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Hero(
+              tag: 'product-${product.id}',
+              child: Image.asset(
+                product.imagePath,
+                height: 80,
+                width: 80,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              product.name,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.pinkAccent,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            Text(
+              "Tono: ${product.shade}",
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildPriceButton("Mate", product.mattePrice, true, context),
+                _buildPriceButton("Gloss", product.glossPrice, false, context),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceButton(
+      String label, int price, bool isMatte, BuildContext context) {
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+    final product = this.product;
+
+    final existingItem = cartProvider.cartItems.firstWhere(
+      (item) => item.productId == product.id && item.isMatte == isMatte,
+      orElse: () => CartItem(
+        id: '',
+        productId: '',
+        name: '',
+        isMatte: false,
+        price: 0,
+        imagePath: '',
+        quantity: 0,
+      ),
+    );
+
+    final isInCart = existingItem.quantity > 0;
+
+    return ElevatedButton(
+      onPressed: () {
+        if (product.stock > 0) {
+          if (isInCart) {
+            cartProvider.updateQuantity(
+              existingItem.id, 
+              existingItem.quantity + 1,
+            );
+          } else {
+            cartProvider.addToCart(product, isMatte);
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isInCart 
+                  ? "+1 ${product.name} ($label) en carrito"
+                  : "${product.name} ($label) agregado al carrito",
+              ),
+              duration: Duration(milliseconds: 800),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Producto agotado"),
+              backgroundColor: Colors.red,
+              duration: Duration(milliseconds: 800),
+            ),
+          );
+        }
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isInCart ? Colors.green : product.color,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        elevation: 5,
+        shadowColor: Colors.pink.withOpacity(0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isInCart) 
+            const Icon(Icons.check, size: 18, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            isInCart ? "Agregado (${existingItem.quantity})" : "$label: \$$price",
+            style: const TextStyle(
+              fontSize: 12, 
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class InventoryScreen extends StatelessWidget {
+  const InventoryScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final products = Provider.of<ProductProvider>(context).products;
+    return Scaffold(
+      body: ListView.builder(
+        itemCount: products.length,
+        itemBuilder: (context, index) {
+          return ListTile(
+            leading: Image.asset(products[index].imagePath, width: 50, height: 50),
+            title: Text(products[index].name),
+            subtitle: Text(
+              "Tono: ${products[index].shade}\n"
+              "Mate: \$${products[index].mattePrice} | Gloss: \$${products[index].glossPrice}\n"
+              "Stock: ${products[index].stock}",
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: () {
+                _showEditProductDialog(context, products[index]);
+              },
+            ),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        child: const Icon(Icons.add),
+        onPressed: () {
+          _showAddProductDialog(context);
+        },
+      ),
+    );
+  }
+
+  void _showAddProductDialog(BuildContext context) {
+    final productProvider = Provider.of<ProductProvider>(context, listen: false);
+    final formKey = GlobalKey<FormState>();
+    Product newProduct = Product.empty();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Agregar nuevo producto"),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: "Nombre"),
+                    onSaved: (value) => newProduct = newProduct.copyWith(name: value),
+                    validator: (value) => value!.isEmpty ? "Requerido" : null,
+                  ),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: "Tono"),
+                    onSaved: (value) => newProduct = newProduct.copyWith(shade: value),
+                  ),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: "Precio Mate"),
+                    keyboardType: TextInputType.number,
+                    onSaved: (value) => newProduct =
+                        newProduct.copyWith(mattePrice: int.parse(value!)),
+                  ),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: "Precio Gloss"),
+                    keyboardType: TextInputType.number,
+                    onSaved: (value) => newProduct =
+                        newProduct.copyWith(glossPrice: int.parse(value!)),
+                  ),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: "Stock"),
+                    keyboardType: TextInputType.number,
+                    onSaved: (value) =>
+                        newProduct = newProduct.copyWith(stock: int.parse(value!)),
+                  ),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: "Ruta de imagen"),
+                    onSaved: (value) =>
+                        newProduct = newProduct.copyWith(imagePath: value),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: const Text("Cancelar"),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton(
+              child: const Text("Guardar"),
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  formKey.currentState!.save();
+                  newProduct = newProduct.copyWith(
+                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                    color: Colors.primaries[Random().nextInt(Colors.primaries.length)],
+                  );
+                  productProvider.addProduct(newProduct);
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+ void _showEditProductDialog(BuildContext context, Product product) {
+  final productProvider = Provider.of<ProductProvider>(context, listen: false);
+  final cartProvider = Provider.of<CartProvider>(context, listen: false);
+  final formKey = GlobalKey<FormState>();
+  Product editedProduct = product.copyWith();
+  String originalImagePath = product.imagePath;
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text("Editar producto"),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      initialValue: product.name,
+                      decoration: const InputDecoration(labelText: "Nombre"),
+                      onSaved: (value) => editedProduct = editedProduct.copyWith(name: value ?? product.name),
+                    ),
+                    TextFormField(
+                      initialValue: product.shade,
+                      decoration: const InputDecoration(labelText: "Tono"),
+                      onSaved: (value) => editedProduct = editedProduct.copyWith(shade: value ?? product.shade),
+                    ),
+                    TextFormField(
+                      initialValue: product.mattePrice.toString(),
+                      decoration: const InputDecoration(labelText: "Precio Mate"),
+                      keyboardType: TextInputType.number,
+                      onSaved: (value) => editedProduct =
+                          editedProduct.copyWith(mattePrice: int.parse(value ?? product.mattePrice.toString())),
+                    ),
+                    TextFormField(
+                      initialValue: product.glossPrice.toString(),
+                      decoration: const InputDecoration(labelText: "Precio Gloss"),
+                      keyboardType: TextInputType.number,
+                      onSaved: (value) => editedProduct =
+                          editedProduct.copyWith(glossPrice: int.parse(value ?? product.glossPrice.toString())),
+                    ),
+                    TextFormField(
+                      initialValue: product.stock.toString(),
+                      decoration: const InputDecoration(labelText: "Stock"),
+                      keyboardType: TextInputType.number,
+                      onSaved: (value) =>
+                          editedProduct = editedProduct.copyWith(stock: int.parse(value ?? product.stock.toString())),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      "Imagen actual:",
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 5),
+                    Image.asset(
+                      editedProduct.imagePath,
+                      height: 50,
+                      width: 50,
+                      fit: BoxFit.cover,
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        _showImageSelectionDialog(context, (newImagePath) {
+                          setState(() {
+                            editedProduct = editedProduct.copyWith(imagePath: newImagePath);
+                          });
+                        }, originalImagePath);
+                      },
+                      child: const Text("Cambiar Imagen"),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                child: const Text("Cancelar"),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              ElevatedButton(
+                child: const Text("Guardar"),
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    formKey.currentState!.save();
+                    await productProvider.updateProduct(product.id, editedProduct);
+                    cartProvider.updatePricesFromInventory(productProvider);
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                onPressed: () async {
+                  await productProvider.removeProduct(product.id);
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+  void _showImageSelectionDialog(BuildContext context, Function(String) onImageSelected, String originalImagePath) {
+    final List<String> availableImages = [
+      "lib/assets/saint.jpeg",
+      "lib/assets/spice.jpeg",
+      "lib/assets/brownie.jpeg",
+      "lib/assets/sweet chocolate.jpeg",
+      "lib/assets/Maroon.jpeg",
+      "lib/assets/hazelnut.jpeg",
+    ];
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Seleccionar Imagen"),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: GridView.builder(
+              shrinkWrap: true,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1,
+              ),
+              itemCount: availableImages.length + 1,
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return GestureDetector(
+                    onTap: () {
+                      onImageSelected(originalImagePath);
+                      Navigator.of(context).pop();
+                    },
+                    child: Column(
+                      children: [
+                        const Icon(Icons.restore, size: 40),
+                        const SizedBox(height: 5),
+                        const Text("Original"),
+                      ],
+                    ),
+                  );
+                }
+                
+                final imagePath = availableImages[index - 1];
+                return GestureDetector(
+                  onTap: () {
+                    onImageSelected(imagePath);
+                    Navigator.of(context).pop();
+                  },
+                  child: Image.asset(
+                    imagePath,
+                    fit: BoxFit.cover,
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text("Cancelar"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class AuthScreen extends StatelessWidget {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final String? redirectRoute;
+
+  AuthScreen({this.redirectRoute});
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.pink.shade50,
+              Colors.pink.shade100,
+            ],
+          ),
+        ),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.face_retouching_natural,
+                          size: 80,
+                          color: Colors.pinkAccent,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Belleza en tus labios',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                        const SizedBox(height: 30),
+                        TextFormField(
+                          controller: _emailController,
+                          decoration: InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: Icon(Icons.email, color: Colors.pink),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          validator: (value) => 
+                              value!.isEmpty ? 'Requerido' : 
+                              !value.contains('@') ? 'Email inválido' : null,
+                        ),
+                        const SizedBox(height: 20),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: 'Contraseña',
+                            prefixIcon: Icon(Icons.lock, color: Colors.pink),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          validator: (value) => 
+                              value!.isEmpty ? 'Requerido' : 
+                              value.length < 6 ? 'Mínimo 6 caracteres' : null,
+                        ),
+                        const SizedBox(height: 30),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.pinkAccent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 5,
+                            ),
+                            onPressed: () async {
+                              if (_formKey.currentState!.validate()) {
+                                bool isAuthenticated = await authProvider.login(
+                                  _emailController.text,
+                                  _passwordController.text,
+                                );
+                                if (isAuthenticated) {
+                                  if (redirectRoute != null) {
+                                    Navigator.pushReplacementNamed(context, redirectRoute!);
+                                  } else {
+                                    Navigator.pushReplacementNamed(context, '/home');
+                                  }
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Credenciales incorrectas'),
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: const Text(
+                              'INICIAR SESIÓN',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 15),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/register');
+                          },
+                          child: Text(
+                            '¿No tienes cuenta? Regístrate aquí',
+                            style: TextStyle(color: Colors.pinkAccent),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton(
+                          onPressed: () {
+                            if (authProvider.isAuthenticated) {
+                              Navigator.pushNamed(context, '/change-password');
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Debes iniciar sesión primero'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          child: Text(
+                            'Cambiar contraseña',
+                            style: TextStyle(color: Colors.pinkAccent),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/admin-login');
+                          },
+                          child: Text(
+                            'Acceso Administrador',
+                            style: TextStyle(color: Colors.pinkAccent),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class AdminLoginScreen extends StatelessWidget {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Acceso Administrador'),
+        backgroundColor: Colors.pinkAccent,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _emailController,
+                decoration: InputDecoration(labelText: 'Email Admin'),
+                validator: (value) => value!.isEmpty ? 'Requerido' : null,
+              ),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: InputDecoration(labelText: 'Contraseña'),
+                validator: (value) => value!.isEmpty ? 'Requerido' : null,
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () async {
+                  if (_formKey.currentState!.validate()) {
+                    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                    bool isAuthenticated = await authProvider.login(
+                      _emailController.text,
+                      _passwordController.text,
+                      isAdmin: true,
+                    );
+                    
+                    if (isAuthenticated) {
+                      Navigator.pushReplacementNamed(context, '/home');
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Credenciales incorrectas o no tiene privilegios de administrador'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: Text('Ingresar como Admin'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+class RegisterScreen extends StatefulWidget {
+  @override
+  _RegisterScreenState createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _nombreController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _telefonoController = TextEditingController();
+  final _calleController = TextEditingController();
+  final _coloniaController = TextEditingController();
+  final _numeroCalleController = TextEditingController();
+  final _referenciaController = TextEditingController();
+  final _ciudadController = TextEditingController();
+
+  bool _isLoading = false;
+
+  bool _isPasswordStrong(String password) {
+    if (password.length < 8) return false;
+    if (!password.contains(RegExp(r'[A-Z]'))) return false;
+    if (!password.contains(RegExp(r'[a-z]'))) return false;
+    if (!password.contains(RegExp(r'[0-9]'))) return false;
+    if (!password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) return false;
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Registro de Usuario'),
+        backgroundColor: Colors.pinkAccent,
+      ),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              _buildTextFormField(
+                controller: _nombreController,
+                label: 'Nombre completo',
+                icon: Icons.person,
+                validator: (value) => value!.isEmpty ? 'Requerido' : null,
+              ),
+              _buildTextFormField(
+                controller: _emailController,
+                label: 'Email',
+                icon: Icons.email,
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) => 
+                    value!.isEmpty ? 'Requerido' : 
+                    !value.contains('@') ? 'Email inválido' : null,
+              ),
+              _buildTextFormField(
+                controller: _passwordController,
+                label: 'Contraseña',
+                icon: Icons.lock,
+                obscureText: true,
+                validator: (value) {
+                  if (value!.isEmpty) return 'Requerido';
+                  if (!_isPasswordStrong(value)) {
+                    return 'La contraseña no cumple los requisitos de seguridad';
+                  }
+                  return null;
+                },
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.help_outline),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'La contraseña debe tener:\n'
+                          '- Mínimo 8 caracteres\n'
+                          '- Al menos una mayúscula\n'
+                          '- Al menos una minúscula\n'
+                          '- Al menos un número\n'
+                          '- Al menos un símbolo especial',
+                        ),
+                        duration: Duration(seconds: 5),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              _buildTextFormField(
+                controller: _confirmPasswordController,
+                label: 'Confirmar contraseña',
+                icon: Icons.lock_outline,
+                obscureText: true,
+                validator: (value) => 
+                    value != _passwordController.text ? 'No coincide' : null,
+              ),
+              _buildTextFormField(
+                controller: _telefonoController,
+                label: 'Teléfono',
+                icon: Icons.phone,
+                keyboardType: TextInputType.phone,
+              ),
+              SizedBox(height: 20),
+              Text('Dirección', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              _buildTextFormField(
+                controller: _calleController,
+                label: 'Calle',
+                icon: Icons.home,
+              ),
+              _buildTextFormField(
+                controller: _coloniaController,
+                label: 'Colonia',
+                icon: Icons.location_city,
+              ),
+              _buildTextFormField(
+                controller: _numeroCalleController,
+                label: 'Número de calle',
+                icon: Icons.numbers,
+              ),
+              _buildTextFormField(
+                controller: _referenciaController,
+                label: 'Referencia',
+                icon: Icons.place,
+              ),
+              _buildTextFormField(
+                controller: _ciudadController,
+                label: 'Ciudad',
+                icon: Icons.location_on,
+              ),
+              SizedBox(height: 20),
+              _isLoading 
+                  ? CircularProgressIndicator()
+                  : ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.pinkAccent,
+                        padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                      ),
+                      onPressed: _submitForm,
+                      child: Text('Registrarse', style: TextStyle(fontSize: 18))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextFormField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+    Widget? suffixIcon,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon),
+          suffixIcon: suffixIcon,
+          border: OutlineInputBorder(),
+        ),
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        validator: validator,
+      ),
+    );
+  }
+
+  Future<void> _submitForm() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      final newUser = Usuario(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        nombre: _nombreController.text,
+        email: _emailController.text,
+        password: _passwordController.text,
+        telefono: _telefonoController.text,
+        calle: _calleController.text,
+        colonia: _coloniaController.text,
+        numeroCalle: _numeroCalleController.text,
+        referencia: _referenciaController.text,
+        ciudad: _ciudadController.text,
+        fechaRegistro: DateTime.now(),
+        ultimoAcceso: DateTime.now(),
+        rol: 'cliente',
+      );
+
+      await authProvider.register(newUser);
+      
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Registro exitoso!')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _telefonoController.dispose();
+    _calleController.dispose();
+    _coloniaController.dispose();
+    _numeroCalleController.dispose();
+    _referenciaController.dispose();
+    _ciudadController.dispose();
+    super.dispose();
+  }
+}
+
+class ChangePasswordScreen extends StatefulWidget {
+  @override
+  _ChangePasswordScreenState createState() => _ChangePasswordScreenState();
+}
+
+class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _currentPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _isLoading = false;
+
+  bool _isPasswordStrong(String password) {
+    if (password.length < 8) return false;
+    if (!password.contains(RegExp(r'[A-Z]'))) return false;
+    if (!password.contains(RegExp(r'[a-z]'))) return false;
+    if (!password.contains(RegExp(r'[0-9]'))) return false;
+    if (!password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) return false;
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Cambiar Contraseña'),
+        backgroundColor: Colors.pinkAccent,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _currentPasswordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Contraseña actual',
+                  prefixIcon: Icon(Icons.lock),
+                ),
+                validator: (value) => value!.isEmpty ? 'Requerido' : null,
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _newPasswordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Nueva contraseña',
+                  prefixIcon: Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(Icons.help_outline),
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'La contraseña debe tener:\n'
+                            '- Mínimo 8 caracteres\n'
+                            '- Al menos una mayúscula\n'
+                            '- Al menos una minúscula\n'
+                            '- Al menos un número\n'
+                            '- Al menos un símbolo especial',
+                          ),
+                          duration: Duration(seconds: 5),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                validator: (value) {
+                  if (value!.isEmpty) return 'Requerido';
+                  if (!_isPasswordStrong(value)) {
+                    return 'La contraseña no cumple los requisitos de seguridad';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _confirmPasswordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Confirmar nueva contraseña',
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+                validator: (value) => 
+                    value != _newPasswordController.text ? 'No coincide' : null,
+              ),
+              SizedBox(height: 24),
+              _isLoading 
+                  ? CircularProgressIndicator()
+                  : ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.pinkAccent,
+                        padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                      ),
+                      onPressed: () => _changePassword(),
+                      child: Text('Cambiar Contraseña'),
+                    ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changePassword() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    try {
+      if (_currentPasswordController.text != authProvider.currentUser?.password) {
+        throw "Contraseña actual incorrecta";
+      }
+
+      final success = await authProvider.changePassword(
+        authProvider.currentUser!.id, 
+        _newPasswordController.text,
+      );
+      
+      if (success) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Contraseña cambiada exitosamente!')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cambiar contraseña')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+}
+
+class CartScreen extends StatelessWidget {
+  const CartScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final cartProvider = Provider.of<CartProvider>(context);
+    final productProvider = Provider.of<ProductProvider>(context);
+    final authProvider = Provider.of<AuthProvider>(context);
+
+    // Agrupar items por producto y tipo (mate/gloss)
+    final groupedItems = <String, List<CartItem>>{};
+    for (var item in cartProvider.cartItems) {
+      final key = '${item.productId}-${item.isMatte}';
+      if (!groupedItems.containsKey(key)) {
+        groupedItems[key] = [];
+      }
+      groupedItems[key]!.add(item);
+    }
+
+    if (!authProvider.isAuthenticated) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Carrito"),
+          centerTitle: true,
+          backgroundColor: Colors.pinkAccent,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Debes iniciar sesión para ver el carrito'),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/auth', arguments: '/cart');
+                },
+                child: const Text('Iniciar Sesión'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Carrito"),
+        centerTitle: true,
+        backgroundColor: Colors.pinkAccent,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              Navigator.pushNamed(context, '/sales');
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              itemCount: groupedItems.length,
+              itemBuilder: (context, index) {
+                final key = groupedItems.keys.elementAt(index);
+                final items = groupedItems[key]!;
+                final cartItem = items.first;
+                final totalQuantity = items.fold(0, (sum, item) => sum + item.quantity);
+                final totalPrice = items.fold(0, (sum, item) => sum + (item.price * item.quantity));
+                
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: ListTile(
+                    leading: Checkbox(
+                      value: cartItem.isSelected,
+                      onChanged: (value) {
+                        for (var item in items) {
+                          cartProvider.toggleSelection(item.id);
+                        }
+                      },
+                    ),
+                    title: Text(cartItem.name),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("${cartItem.isMatte ? "Mate" : "Gloss"}"),
+                        Text("Precio unitario: \$${cartItem.price}"),
+                        Text("Cantidad: $totalQuantity"),
+                        Text("Total: \$$totalPrice", 
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove),
+                          onPressed: () {
+                            if (totalQuantity > 1) {
+                              cartProvider.updateQuantity(
+                                  cartItem.id, cartItem.quantity - 1);
+                            } else {
+                              cartProvider.removeFromCart(cartItem.id);
+                            }
+                          },
+                        ),
+                        Text("$totalQuantity"),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: () {
+                            cartProvider.updateQuantity(
+                                cartItem.id, cartItem.quantity + 1);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          // Resto del código permanece igual...
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      "Total:",
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      "\$${cartProvider.totalPrice}",
+                      style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        cartProvider.clearCart();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Carrito vaciado")),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                      ),
+                      child: const Text("Vaciar Carrito"),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (cartProvider.cartItems.any((item) => item.isSelected)) {
+                          cartProvider.completePurchase(context);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Selecciona al menos un producto"),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.pinkAccent,
+                        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        elevation: 5,
+                      ),
+                      child: const Text(
+                        "Pagar",
+                        style: TextStyle(fontSize: 18, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SalesHistoryScreen extends StatelessWidget {
+  const SalesHistoryScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final salesProvider = Provider.of<SalesProvider>(context);
+    final userProvider = Provider.of<UserProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Historial de Ventas"),
+        centerTitle: true,
+        backgroundColor: Colors.pinkAccent,
+      ),
+      body: FutureBuilder(
+        future: salesProvider.fetchSales(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          
+          return ListView.builder(
+            itemCount: salesProvider.ventas.length,
+            itemBuilder: (context, index) {
+              final venta = salesProvider.ventas[index];
+              return Card(
+                margin: const EdgeInsets.all(8),
+                child: ListTile(
+                  title: Text("Venta #${venta.id.substring(0, 8)}"),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Total: \$${venta.total.toStringAsFixed(2)}"),
+                      Text("Fecha: ${venta.fecha.toString().substring(0, 16)}"),
+                      Text("Estado: ${venta.estado}"),
+                      Text("Productos: ${venta.items.length}"),
+                    ],
+                  ),
+                  trailing: Icon(
+                    venta.notificada ? Icons.email : Icons.email_outlined,
+                    color: venta.notificada ? Colors.green : Colors.grey,
+                  ),
+                  onTap: () {
+                    _showSaleDetails(context, venta, userProvider);
+                  },
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  void _showSaleDetails(BuildContext context, Venta venta, UserProvider userProvider) async {
+    final usuario = await userProvider.getUser(venta.userId);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Detalles de Venta #${venta.id.substring(0, 8)}"),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("Cliente: ${usuario?.nombre ?? 'Desconocido'}"),
+                Text("Email: ${usuario?.email ?? 'No disponible'}"),
+                Text("Fecha: ${venta.fecha.toString()}"),
+                Text("Total: \$${venta.total.toStringAsFixed(2)}"),
+                Text("Método de pago: ${venta.metodoPago}"),
+                const SizedBox(height: 16),
+                const Text("Productos:", style: TextStyle(fontWeight: FontWeight.bold)),
+                ...venta.items.map((item) => 
+                  Text("${item.quantity}x ${item.name} (${item.isMatte ? "Mate" : "Gloss"}) - \$${item.price}")
+                ).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text("Cerrar"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class UserManagementScreen extends StatelessWidget {
+  const UserManagementScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final userProvider = Provider.of<UserProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Gestión de Usuarios"),
+        centerTitle: true,
+        backgroundColor: Colors.pinkAccent,
+      ),
+      body: FutureBuilder(
+        future: userProvider.fetchUsers(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          
+          return ListView.builder(
+            itemCount: userProvider.usuarios.length,
+            itemBuilder: (context, index) {
+              final usuario = userProvider.usuarios[index];
+              return Card(
+                margin: const EdgeInsets.all(8),
+                child: ListTile(
+                  title: Text(usuario.nombre),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Email: ${usuario.email}"),
+                      Text("Rol: ${usuario.rol}"),
+                      Text("Contraseña: ${'*' * 8}"),
+                      Text("Registro: ${usuario.fechaRegistro.toString().substring(0, 10)}"),
+                    ],
+                  ),
+                  trailing: Icon(
+                    usuario.rol == 'admin' ? Icons.admin_panel_settings : Icons.person,
+                    color: usuario.rol == 'admin' ? Colors.pinkAccent : Colors.blue,
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        child: const Icon(Icons.add),
+        onPressed: () {
+          _showAddUserDialog(context);
+        },
+      ),
+    );
+  }
+
+  void _showAddUserDialog(BuildContext context) {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final formKey = GlobalKey<FormState>();
+    final nombreController = TextEditingController();
+    final emailController = TextEditingController();
+    final telefonoController = TextEditingController();
+    final direccionController = TextEditingController();
+    String selectedRol = 'cliente';
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text("Agregar Usuario"),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nombreController,
+                        decoration: const InputDecoration(labelText: "Nombre"),
+                        validator: (value) => value!.isEmpty ? "Requerido" : null,
+                      ),
+                      TextFormField(
+                        controller: emailController,
+                        decoration: const InputDecoration(labelText: "Email"),
+                        validator: (value) => value!.isEmpty ? "Requerido" : null,
+                      ),
+                      TextFormField(
+                        controller: telefonoController,
+                        decoration: const InputDecoration(labelText: "Teléfono"),
+                        keyboardType: TextInputType.phone,
+                      ),
+                      TextFormField(
+                        controller: direccionController,
+                        decoration: const InputDecoration(labelText: "Dirección"),
+                      ),
+                      DropdownButtonFormField<String>(
+                        value: selectedRol,
+                        items: ['cliente', 'admin'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value == 'admin' ? 'Administrador' : 'Cliente'),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          setState(() {
+                            selectedRol = newValue!;
+                          });
+                        },
+                        decoration: const InputDecoration(labelText: "Rol"),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text("Cancelar"),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    if (formKey.currentState!.validate()) {
+                      final nuevoUsuario = Usuario(
+                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                        nombre: nombreController.text,
+                        email: emailController.text,
+                        password: 'P@ssw0rd123', // Contraseña por defecto segura
+                        telefono: telefonoController.text,
+                        calle: direccionController.text,
+                        colonia: '',
+                        numeroCalle: '',
+                        referencia: '',
+                        ciudad: '',
+                        fechaRegistro: DateTime.now(),
+                        ultimoAcceso: DateTime.now(),
+                        rol: selectedRol,
+                      );
+                      
+                      userProvider.addUser(nuevoUsuario);
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  child: const Text("Guardar"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class Badge extends StatelessWidget {
+  final Widget child;
+  final Widget label;
+
+  const Badge({required this.child, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        child,
+        Positioned(
+          right: 8,
+          top: 8,
+          child: Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: Colors.red,
+            ),
+            constraints: const BoxConstraints(
+              minWidth: 16,
+              minHeight: 16,
+            ),
+            child: Center(child: label),
+          ),
+        )
+      ],
+    );
+  }
+}
