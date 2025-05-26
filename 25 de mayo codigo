@@ -1624,7 +1624,7 @@ class AuthScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          'Bella y elegancia',
+                          'Belleza y elegancia',
                           style: Theme.of(context).textTheme.headlineMedium,
                         ),
                         const SizedBox(height: 30),
